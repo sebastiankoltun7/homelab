@@ -1,0 +1,18 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - qemu-guest-agent
+
+users:
+  - default
+  - name: admin
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDmDbqY9LjGNSJH/ltAFHkLgIwelGVJnG7tKvOXQBFnC sebas@DESKTOP-9LM5LKC
+
+runcmd:
+  - systemctl enable qemu-guest-agent
+  - systemctl start qemu-guest-agent

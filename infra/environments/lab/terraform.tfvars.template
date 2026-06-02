@@ -1,0 +1,20 @@
+#This is a template file, copy without .template extension and put your proxmox API token 
+
+# --- Auth ---
+# Proxmox: Datacenter -> Permissions -> API Tokens
+proxmox_api_token = "USER@pam!TOKEN_NAME=XXXXXX"
+
+# --- Machine config ---
+vm_id         = 101
+vm_ip         = "192.168.1.101"
+vm_ip_gateway = "192.168.1.1"
+
+# --- Resources ---
+vm_cpus             = 2
+vm_memory_dedicated = 2048
+vm_memory_floating  = 8192
+vm_disk_size        = 20
+
+# --- Image ---
+# Default debian 12
+# distro_image_url = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-nocloud-amd64.qcow2"

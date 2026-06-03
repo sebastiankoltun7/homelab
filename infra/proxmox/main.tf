@@ -8,39 +8,45 @@ terraform {
 }
 
 provider "proxmox" {
-  endpoint = "https://192.168.1.100:8006/"
-  password = var.password
-  username = "root@pam"
-  insecure = true
+  endpoint  = "https://${var.proxmox_ip}:${var.proxmox_port}/"
+  username  = var.username
+  api_token = var.api_token
+  insecure  = true
 
   ssh {
-    agent    = true
-    username = "root"
+    agent       = false # dont use local ssh agent
+    username    = "root"
+    private_key = file(var.root_ssh_pub_key_location)
 
     node {
       name    = "pve"
-      address = "192.168.1.100"
+      address = var.proxmox_ip
     }
   }
 }
 
+# Fetch & unpack distro image
 resource "proxmox_download_file" "distro_cloud_image" {
-  #   content_type = "import"
-  #   datastore_id = "local"
-  #   node_name    = "pve"
-  #   url          = var.distro_image_url
   content_type = "import"
   datastore_id = "local"
-  file_name    = "jammy-server-cloudimg-amd64.qcow2"
   node_name    = "pve"
-  url          = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
-  overwrite    = true
+  file_name    = replace(basename(var.distro_image_url), ".img", ".qcow2")
+  url          = var.distro_image_url
+  # After creating vm do not change it after
+  overwrite = false
 }
 
-resource "proxmox_virtual_environment_vm" "k3s_node" {
-  name      = "k3s-node-${var.vm_id}"
+resource "proxmox_virtual_environment_vm" "vm_node" {
+  name      = "${var.vm_name}-${var.vm_id}"
   node_name = "pve"
   vm_id     = var.vm_id
+
+  # After creating vm do not change it after
+  lifecycle {
+    ignore_changes = [disk, initialization, agent]
+  }
+
+  boot_order = ["scsi0"]
 
   disk {
     datastore_id = "local-lvm"
@@ -48,6 +54,7 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
     interface    = "scsi0"
     size         = var.vm_disk_size
   }
+
   network_device {
     bridge = "vmbr0"
   }
@@ -68,14 +75,9 @@ resource "proxmox_virtual_environment_vm" "k3s_node" {
     timeout = "5m"
   }
 
-  serial_device {}
-  vga {
-    type = "serial0"
-  }
-
   cpu {
     cores = var.vm_cpus
-    type  = "x86-64-v2-AES" # recommended for modern CPUs
+    type  = "x86-64-v2-AES" # recommended in bpg/proxmox docs for modern CPUs
   }
 
   memory {
@@ -92,7 +94,16 @@ resource "proxmox_virtual_environment_file" "cloud_config" {
   upload_mode = "sftp"
 
   source_raw {
-    data      = file("cloud-init.yaml")
+    data = templatefile("cloud-init.tftpl", {
+      vm_ssh_pub_key = var.vm_ssh_pub_key
+    })
     file_name = "cloud-init.yaml"
+  }
+
+  # After creating vm do not change it after
+  lifecycle {
+    ignore_changes = [
+      source_raw[0].data
+    ]
   }
 }

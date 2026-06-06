@@ -16,8 +16,7 @@ provider "proxmox" {
   ssh {
     agent       = false # dont use local ssh agent
     username    = "root"
-    private_key = file(var.root_ssh_pub_key_location)
-
+    private_key = file(var.root_ssh_priv_key_location)
     node {
       name    = "pve"
       address = var.proxmox_ip
@@ -32,7 +31,7 @@ resource "proxmox_download_file" "distro_cloud_image" {
   node_name    = "pve"
   file_name    = replace(basename(var.distro_image_url), ".img", ".qcow2")
   url          = var.distro_image_url
-  # After creating vm do not change it after
+  # After creating vm do not change it
   overwrite = false
 }
 
@@ -41,7 +40,7 @@ resource "proxmox_virtual_environment_vm" "vm_node" {
   node_name = "pve"
   vm_id     = var.vm_id
 
-  # After creating vm do not change it after
+  # After creating vm do not change it
   lifecycle {
     ignore_changes = [disk, initialization, agent]
   }
@@ -100,7 +99,7 @@ resource "proxmox_virtual_environment_file" "cloud_config" {
     file_name = "cloud-init.yaml"
   }
 
-  # After creating vm do not change it after
+  # After creating vm do not change it
   lifecycle {
     ignore_changes = [
       source_raw[0].data

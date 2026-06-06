@@ -21,7 +21,7 @@ variable "api_token" {
   sensitive   = true
 }
 
-variable "root_ssh_pub_key_location" {
+variable "root_ssh_priv_key_location" {
   description = "SSH public key location added to proxmox root account"
   type = string
   default = "~/.ssh/id_ed25519" 

@@ -1,8 +1,11 @@
 # Proxmox VM Deployment with Terraform
 
-This project enables fully automated deployment of virtual machines (VMs) on a **Proxmox VE** server using **Cloud-Init** and the **Terraform** provider (`bpg/proxmox`).
+This project completely automates Proxmox VM lifecycle management using the modern `bpg/proxmox` provider. 
 
-The script automatically downloads the specified distribution image (defaulting to Ubuntu 24.04 LTS Noble Numbat), configures the network, uploads user configuration snippets, and boots the ready-to-use virtual machine.
+* **Downloads Cloud Images:** Automatically pulls cloud images (default: Ubuntu 24.04 LTS) straight to Proxmox storage.
+* **Generates & Uploads Cloud-Init:** Dynamically builds Cloud-Init user-data and pushes it as a snippet via SFTP/SSH before boot.
+* **Provisions the VM:** Creates the VM, attaches the cloud image, binds network interfaces, and injects the Cloud-Init configuration.
+* **Injects SSH Keys:** Binds your local public key (`~/.ssh/id_ed25519`) into the guest OS for instant, passwordless `ssh` access on completion.
 
 ---
 
@@ -42,3 +45,27 @@ Create your own variables file based on the template:
    cp terraform.tfvars.template terraform.tfvars
 terraform plan
 terraform apply -auto-approve
+```
+
+### 🔑 Accessing the VM
+Once the deployment is complete and the virtual machine boots up, you can log in to it via SSH.
+
+Cloud-Init automatically provisions the VM with the same SSH key defined in your Terraform variables (by default paths like ~/.ssh/id_ed25519 or ~/.ssh/id_rsa).
+
+To connect from your local machine, use the configured username and the VM's IP address:
+
+```Bash
+ssh -i ~/.ssh/id_ed25519 username@vm_ip_address
+```
+
+
+## 🔮 Future Improvements
+
+Here are a few ideas and features that can be added to enhance this project:
+
+* **Ansible Integration:** Add a `local-exec` provisioner to automatically trigger an Ansible playbook as soon as the VM is up and reachable.
+* **Multi-VM Deployments:** Refactor the configuration using Terraform `for_each` or `count` loops to support deploying multiple nodes (e.g., a K8s cluster) simultaneously.
+* **IPAM Integration:** Integrate with a tool like NetBox or use a DHCP reservation system instead of static IP assignment in `terraform.tfvars`.
+* **Proxmox Backup Integration:** Add native backup scheduling (`proxmox_virtual_environment_backup`) configurations directly into the Terraform code.
+
+* **Pre-baked Image Pipeline:** Use Packer to build custom Ubuntu templates containing pre-installed packages (Docker, QEMU guest agent) to speed up boot time and assure security.

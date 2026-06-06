@@ -7,6 +7,10 @@ This project completely automates Proxmox VM lifecycle management using the mode
 * **Provisions the VM:** Creates the VM, attaches the cloud image, binds network interfaces, and injects the Cloud-Init configuration.
 * **Injects SSH Keys:** Binds your local public key (`~/.ssh/id_ed25519`) into the guest OS for instant, passwordless `ssh` access on completion.
 
+
+Once the deployment is complete and the virtual machine boots up, you can find its IP address in the Proxmox WebUI under the VM's **Summary** tab:
+![Proxmox VM Summary](image.png)
+
 ---
 
 ## 🛠️ Prerequisites and Proxmox Preparation
@@ -67,5 +71,4 @@ Here are a few ideas and features that can be added to enhance this project:
 * **Multi-VM Deployments:** Refactor the configuration using Terraform `for_each` or `count` loops to support deploying multiple nodes (e.g., a K8s cluster) simultaneously.
 * **IPAM Integration:** Integrate with a tool like NetBox or use a DHCP reservation system instead of static IP assignment in `terraform.tfvars`.
 * **Proxmox Backup Integration:** Add native backup scheduling (`proxmox_virtual_environment_backup`) configurations directly into the Terraform code.
-
 * **Pre-baked Image Pipeline:** Use Packer to build custom Ubuntu templates containing pre-installed packages (Docker, QEMU guest agent) to speed up boot time and assure security.

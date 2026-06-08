@@ -5,4 +5,4 @@ proxmox = {
   api_token             = "terraform@pam!terraform_token=XXXXXXXXXXXXXXXXXXXX"
   root_ssh_key_location = "~/.ssh/id_ed25519"
 }
-vm_ssh_pub_key = "ssh-ed25519 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+vm_admin_ssh_pub_key = "ssh-ed25519 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

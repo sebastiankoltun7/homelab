@@ -4,7 +4,7 @@ module "basic_vm" {
   vm_name = "k3s-node"
 
   # OS Image
-  distro_image_url = "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-nocloud-amd64.qcow2"
+  distro_image_url = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
 
   # Network
   vm_ip         = "192.168.1.101"

@@ -16,3 +16,10 @@ users:
 runcmd:
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
+  - echo "Finished configuration, rebooting..."
+
+# Wymuszenie restartu po wykonaniu wszystkich zadań
+power_state:
+  delay: "now"
+  mode: reboot
+  message: "Rebooting system after cloud-init configuration."

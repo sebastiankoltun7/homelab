@@ -28,7 +28,6 @@ resource "proxmox_virtual_environment_vm" "vm_node" {
   # After creating vm do not change it
   lifecycle {
     ignore_changes = [initialization, agent]
-    prevent_destroy = true
   }
 
   boot_order = ["scsi0"]

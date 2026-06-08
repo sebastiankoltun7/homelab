@@ -13,10 +13,11 @@ resource "proxmox_download_file" "distro_cloud_image" {
   content_type = "import"
   datastore_id = "local"
   node_name    = "pve"
-  file_name    = replace(basename(var.distro_image_url), ".img", ".qcow2") #endswith(basename(var.distro_image_url), ".img") ? replace(basename(var.distro_image_url), ".img", ".qcow2") : basename(var.distro_image_url)
+  file_name    = endswith(basename(var.distro_image_url), ".img") ? replace(basename(var.distro_image_url), ".img", ".qcow2") : basename(var.distro_image_url)
   url          = var.distro_image_url
   # After creating vm do not change it
   overwrite = false
+  overwrite_unmanaged = true
 }
 
 resource "proxmox_virtual_environment_vm" "vm_node" {
@@ -77,11 +78,11 @@ resource "proxmox_virtual_environment_file" "cloud_config" {
   upload_mode = "sftp"
 
   source_raw {
-    data = templatefile("cloud-init.tftpl", {
-      vm_admin_username = var.vm_admin_username
-      vm_ssh_pub_key    = var.vm_admin_ssh_pub_key
+    data = templatefile("${path.module}/cloud-init.tftpl", {
+      vm_admin_username    = var.vm_admin_username
+      vm_admin_ssh_pub_key = var.vm_admin_ssh_pub_key
     })
-    file_name = "cloud-init.yaml"
+    file_name = "cloud-init-${var.vm_id}.yaml"
   }
 
   # After creating vm do not change it

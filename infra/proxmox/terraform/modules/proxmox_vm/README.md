@@ -1,4 +1,4 @@
-# Proxmox VM Deployment with Terraform
+# Terraform Proxmox VM Module
 
 This project completely automates Proxmox VM lifecycle management using the modern `bpg/proxmox` provider. 
 
@@ -24,8 +24,7 @@ Before running the script, you must properly configure privileges and SSH access
    * **Realm:** `pve`
 3. Go to the **Permissions** tab and grant the user an appropriate role on the path `/` (the entire cluster), containing the following privileges: 
    * `PVEAdmin`
-   * `Sys.Modify`, `Sys.Audit`
-   * `Datastore.Allocate`, `Datastore.AllocateSpace`
+   * `Sys.Modify`, `Sys.Audit`, `Datastore.Allocate`, `Datastore.AllocateSpace`
 
 ### Step 2: Generating an API Token
 1. In the WebUI, navigate to **Datacenter** -> **Permissions** -> **API Tokens** and click **Add**.
@@ -42,15 +41,6 @@ The Terraform provider requires direct SSH access to the Proxmox host to upload 
 
 ---
 
-## 🚀 Quick Start (Deployment)
-
-Create your own variables file based on the template:
-   ```bash
-   cp terraform.tfvars.template terraform.tfvars
-terraform plan
-terraform apply -auto-approve
-```
-
 ### 🔑 Accessing the VM
 Once the deployment is complete and the virtual machine boots up, you can log in to it via SSH.
 
@@ -61,14 +51,3 @@ To connect from your local machine, use the configured username and the VM's IP 
 ```Bash
 ssh -i ~/.ssh/id_ed25519 username@vm_ip_address
 ```
-
-
-## 🔮 Future Improvements
-
-Here are a few ideas and features that can be added to enhance this project:
-
-* **Ansible Integration:** Add a `local-exec` provisioner to automatically trigger an Ansible playbook as soon as the VM is up and reachable.
-* **Multi-VM Deployments:** Refactor the configuration using Terraform `for_each` or `count` loops to support deploying multiple nodes (e.g., a K8s cluster) simultaneously.
-* **IPAM Integration:** Integrate with a tool like NetBox or use a DHCP reservation system instead of static IP assignment in `terraform.tfvars`.
-* **Proxmox Backup Integration:** Add native backup scheduling (`proxmox_virtual_environment_backup`) configurations directly into the Terraform code.
-* **Pre-baked Image Pipeline:** Use Packer to build custom Ubuntu templates containing pre-installed packages (Docker, QEMU guest agent) to speed up boot time and assure security.

@@ -8,6 +8,10 @@ terraform {
   }
 }
 
+locals {
+  boot_interfaces = [for d in var.vm_disks : d.interface if d.is_boot_disk]
+}
+
 # Fetch & unpack distro image
 resource "proxmox_download_file" "distro_cloud_image" {
   content_type = "import"
@@ -16,7 +20,7 @@ resource "proxmox_download_file" "distro_cloud_image" {
   file_name    = endswith(basename(var.distro_image_url), ".img") ? replace(basename(var.distro_image_url), ".img", ".qcow2") : basename(var.distro_image_url)
   url          = var.distro_image_url
   # After creating vm do not change it
-  overwrite = false
+  overwrite           = false
   overwrite_unmanaged = true
 }
 
@@ -24,24 +28,31 @@ resource "proxmox_virtual_environment_vm" "vm_node" {
   name      = "${var.vm_name}-${var.vm_id}"
   node_name = "pve"
   vm_id     = var.vm_id
+  tags      = var.vm_tags
 
   # After creating vm do not change it
   lifecycle {
     ignore_changes = [initialization, agent]
   }
 
-  boot_order = ["scsi0"]
+  scsi_hardware = "virtio-scsi-single"
+  boot_order = local.boot_interfaces
 
-  disk {
-    datastore_id = "local-lvm"
-    file_id      = proxmox_download_file.distro_cloud_image.id
-    interface    = "scsi0"
-    size         = var.vm_disk_size
+  dynamic "disk" {
+    for_each = var.vm_disks
+    content {
+      datastore_id = disk.value.datastore_id
+      size         = disk.value.size
+      interface    = disk.value.interface
+      file_id      = disk.value.is_boot_disk ? proxmox_download_file.distro_cloud_image.id : null
+      serial       = lookup(disk.value, "serial", null)
+    }
   }
 
   network_device {
     bridge = "vmbr0"
   }
+
   initialization {
     ip_config {
       ipv4 {

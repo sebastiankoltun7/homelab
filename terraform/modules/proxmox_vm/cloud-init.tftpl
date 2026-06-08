@@ -18,7 +18,7 @@ runcmd:
   - systemctl start qemu-guest-agent
   - echo "Finished configuration, rebooting..."
 
-# Wymuszenie restartu po wykonaniu wszystkich zadań
+# Force reboot after setup
 power_state:
   delay: "now"
   mode: reboot

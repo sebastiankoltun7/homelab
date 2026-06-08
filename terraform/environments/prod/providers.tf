@@ -22,4 +22,5 @@ provider "proxmox" {
       address = var.proxmox.ip
     }
   }
+  
 }

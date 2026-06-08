@@ -17,6 +17,6 @@ module "basic_vm" {
   vm_disk_size         = 20
 
   # Admin Access
-  vm_admin_username    = skoltun
+  vm_admin_username    = "skoltun"
   vm_admin_ssh_pub_key = var.vm_ssh_pub_key
 }

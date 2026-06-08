@@ -14,7 +14,7 @@ module "basic_vm" {
   vm_cpus              = 2
   vm_memory_dedicated  = 2048
   vm_memory_floating   = 8192
-  vm_disk_size         = 20
+  vm_disk_size         = 10
 
   # Admin Access
   vm_admin_username    = "skoltun"

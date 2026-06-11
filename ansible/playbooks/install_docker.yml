@@ -7,7 +7,7 @@
       ansible.builtin.file:
         path: "{{ docker_mount_point }}"
         state: directory
-        mode: '0755'
+        mode: "0755"
 
     - name: Format docker data disk
       community.general.filesystem:
@@ -29,7 +29,7 @@
         state: directory
         owner: root
         group: root
-        mode: '0711'
+        mode: "0711"
       loop:
         - "{{ docker_engine_root }}"
         - "{{ containerd_root }}"
@@ -37,6 +37,12 @@
     - name: Run Docker installation role
       include_role:
         name: geerlingguy.docker
+      vars:
+        docker_daemon_config: "{{ docker_daemon_options }}"
+        docker_users:
+          - "{{ docker_target_user }}"
+        docker_install_compose: true
+        docker_compose_package: docker-compose-plugin
 
     - name: Configure containerd root directory
       ansible.builtin.copy:
@@ -45,3 +51,11 @@
           root = "{{ containerd_root }}"
         dest: /etc/containerd/config.toml
       notify: restart containerd
+    - name: Configure docker cleanup
+      ansible.builtin.include_tasks: ../tasks/docker_cleanup_cron.yml
+  handlers:
+    - name: restart containerd
+      ansible.builtin.systemd:
+        name: containerd
+        state: restarted
+        daemon_reload: true

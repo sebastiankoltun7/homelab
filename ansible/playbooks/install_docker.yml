@@ -1,0 +1,47 @@
+- name: Docker setup
+  hosts: role_docker
+  become: true
+
+  tasks:
+    - name: Create mount point
+      ansible.builtin.file:
+        path: "{{ docker_mount_point }}"
+        state: directory
+        mode: '0755'
+
+    - name: Format docker data disk
+      community.general.filesystem:
+        fstype: ext4
+        dev: "{{ docker_disk_id }}"
+        force: false
+
+    - name: Mount docker data disk
+      ansible.posix.mount:
+        path: "{{ docker_mount_point }}"
+        src: "{{ docker_disk_id }}"
+        fstype: ext4
+        opts: discard,defaults
+        state: mounted
+
+    - name: Ensure dedicated directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0711'
+      loop:
+        - "{{ docker_engine_root }}"
+        - "{{ containerd_root }}"
+
+    - name: Run Docker installation role
+      include_role:
+        name: geerlingguy.docker
+
+    - name: Configure containerd root directory
+      ansible.builtin.copy:
+        content: |
+          version = 2
+          root = "{{ containerd_root }}"
+        dest: /etc/containerd/config.toml
+      notify: restart containerd

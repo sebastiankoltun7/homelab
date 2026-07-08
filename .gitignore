@@ -1,5 +1,32 @@
+# --- Terraform  ---
 .terraform/
 *.tfstate*
 *.tfstate.backup
+*.tfvars*
 .terraform.lock.hcl
-terraform.tfvars
+
+# --- Ansible & Python ---
+venv/
+.venv/
+env/
+
+# Ansible collections
+collections/
+roles/
+
+# Temp files
+*.retry
+
+# --- Secrets & Configs ---
+*.vault
+*.creds.yml
+proxmox_creds.yml
+group_vars/all/vault.yml
+.env
+
+# --- OS & IDE ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/

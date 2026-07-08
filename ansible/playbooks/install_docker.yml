@@ -1,8 +1,25 @@
-- name: Docker setup
+---
+- name: Docker installation and configuration
   hosts: role_docker
   become: true
 
   tasks:
+    - name: Create docker_svc user
+      ansible.builtin.user:
+        name: docker_svc
+        shell: /bin/bash
+        groups: docker
+        append: true
+        create_home: true
+
+    - name: Ensure docker_svc has permission to the data disk
+      ansible.builtin.file:
+        path: "{{ docker_mount_point }}"
+        state: directory
+        owner: docker_svc
+        group: docker_svc
+        mode: '0750'
+
     - name: Create mount point
       ansible.builtin.file:
         path: "{{ docker_mount_point }}"
@@ -35,7 +52,7 @@
         - "{{ containerd_root }}"
 
     - name: Run Docker installation role
-      include_role:
+      ansible.builtin.include_role:
         name: geerlingguy.docker
       vars:
         docker_daemon_config: "{{ docker_daemon_options }}"
@@ -51,8 +68,10 @@
           root = "{{ containerd_root }}"
         dest: /etc/containerd/config.toml
       notify: restart containerd
+
     - name: Configure docker cleanup
       ansible.builtin.include_tasks: ../tasks/docker_cleanup_cron.yml
+
   handlers:
     - name: restart containerd
       ansible.builtin.systemd:

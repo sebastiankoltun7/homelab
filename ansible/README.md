@@ -1,6 +1,6 @@
 # Ansible Configuration
 
-This directory contains the automation playbooks for configuring your Proxmox-managed infrastructure.
+This directory contains the automation playbooks for configuring Proxmox-managed infrastructure.
 
 ## Prerequisites
 * **Ansible Core:** 2.21.0 or higher
@@ -13,3 +13,4 @@ This directory contains the automation playbooks for configuring your Proxmox-ma
 Before running the playbooks, ensure all required Ansible collections are installed from the root directory:
 ```bash
 ansible-galaxy install -r requirements.yml
+```

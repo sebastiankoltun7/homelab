@@ -1,8 +1,0 @@
-proxmox = {
-  ip                    = "192.168.1.100"
-  port                  = "8006"
-  username              = "terraform@pve!terraform-token"
-  api_token             = "terraform@pam!terraform_token=XXXXXXXXXXXXXXXXXXXX"
-  root_ssh_key_location = "~/.ssh/id_ed25519"
-}
-vm_ssh_pub_key = "ssh-ed25519 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"

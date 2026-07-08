@@ -1,14 +1,15 @@
-module "docker-prod" {
-  source  = "../../modules/proxmox_vm"
-  vm_id   = 101
-  vm_name = "docker-prod"
+//Composite module
+module "docker_vm" {
+  source  = "../proxmox_vm"
+  vm_id   = var.vm_id
+  vm_name = var.vm_name
   vm_tags = ["env-prod", "role-docker", "managment-plane"]
 
   # OS Image
   distro_image_url = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
 
   # Network
-  vm_ip         = "192.168.1.101"
+  vm_ip         = var.vm_ip
   vm_ip_gateway = "192.168.1.1"
 
   # Resources
@@ -34,6 +35,23 @@ module "docker-prod" {
   ]
 
   # Admin Access
-  vm_admin_username    = "skoltun"
-  vm_admin_ssh_pub_key = var.vm_ssh_pub_key
+  vm_admin_username    = var.vm_admin_username
+  vm_admin_ssh_pub_key = var.vm_admin_public_key
+}
+
+//Overrides
+variable "vm_id" {
+    type = number
+}
+variable "vm_name" {
+  type = string
+}
+variable "vm_ip" {
+  type = string
+}
+variable "vm_admin_username" {
+  type = string
+}
+variable "vm_admin_public_key" {
+  type = string
 }

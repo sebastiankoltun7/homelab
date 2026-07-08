@@ -1,0 +1,80 @@
+---
+- name: Docker installation and configuration
+  hosts: role_docker
+  become: true
+
+  tasks:
+    - name: Create docker_svc user
+      ansible.builtin.user:
+        name: docker_svc
+        shell: /bin/bash
+        groups: docker
+        append: true
+        create_home: true
+
+    - name: Ensure docker_svc has permission to the data disk
+      ansible.builtin.file:
+        path: "{{ docker_mount_point }}"
+        state: directory
+        owner: docker_svc
+        group: docker_svc
+        mode: '0750'
+
+    - name: Create mount point
+      ansible.builtin.file:
+        path: "{{ docker_mount_point }}"
+        state: directory
+        mode: "0755"
+
+    - name: Format docker data disk
+      community.general.filesystem:
+        fstype: ext4
+        dev: "{{ docker_disk_id }}"
+        force: false
+
+    - name: Mount docker data disk
+      ansible.posix.mount:
+        path: "{{ docker_mount_point }}"
+        src: "{{ docker_disk_id }}"
+        fstype: ext4
+        opts: discard,defaults
+        state: mounted
+
+    - name: Ensure dedicated directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0711"
+      loop:
+        - "{{ docker_engine_root }}"
+        - "{{ containerd_root }}"
+
+    - name: Run Docker installation role
+      ansible.builtin.include_role:
+        name: geerlingguy.docker
+      vars:
+        docker_daemon_config: "{{ docker_daemon_options }}"
+        docker_users:
+          - "{{ docker_target_user }}"
+        docker_install_compose: true
+        docker_compose_package: docker-compose-plugin
+
+    - name: Configure containerd root directory
+      ansible.builtin.copy:
+        content: |
+          version = 2
+          root = "{{ containerd_root }}"
+        dest: /etc/containerd/config.toml
+      notify: restart containerd
+
+    - name: Configure docker cleanup
+      ansible.builtin.include_tasks: ../tasks/docker_cleanup_cron.yml
+
+  handlers:
+    - name: restart containerd
+      ansible.builtin.systemd:
+        name: containerd
+        state: restarted
+        daemon_reload: true

@@ -1,0 +1,8 @@
+---
+all:
+  children:
+    role_docker:
+      hosts:
+        docker-host:
+          ansible_host: 192.168.1.101
+          ansible_user: skoltun

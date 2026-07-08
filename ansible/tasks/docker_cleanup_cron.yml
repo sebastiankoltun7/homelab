@@ -1,0 +1,20 @@
+---
+- name: Ensure cron is installed
+  ansible.builtin.package:
+    name: cron
+    state: present
+
+- name: Ensure cron service is running
+  ansible.builtin.systemd:
+    name: cron
+    state: started
+    enabled: true
+
+- name: Add docker prune to crontab
+  ansible.builtin.cron:
+    name: "Docker system prune"
+    minute: "{{ docker_cleanup_cron_minute }}"
+    hour: "{{ docker_cleanup_cron_hour }}"
+    weekday: "{{ docker_cleanup_cron_weekday }}"
+    job: "{{ docker_cleanup_command }}"
+    user: "{{ docker_target_user }}"

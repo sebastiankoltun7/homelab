@@ -20,9 +20,8 @@ provider "proxmox" {
   insecure  = true
 
   ssh {
-    agent       = false
+    agent       = true
     username    = "root"
-    private_key = file(var.proxmox.root_ssh_key_location)
     node {
       name    = "pve"
       address = var.proxmox.ip

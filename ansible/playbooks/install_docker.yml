@@ -4,22 +4,6 @@
   become: true
 
   tasks:
-    - name: Create docker_svc user
-      ansible.builtin.user:
-        name: docker_svc
-        shell: /bin/bash
-        groups: docker
-        append: true
-        create_home: true
-
-    - name: Ensure docker_svc has permission to the data disk
-      ansible.builtin.file:
-        path: "{{ docker_mount_point }}"
-        state: directory
-        owner: docker_svc
-        group: docker_svc
-        mode: '0750'
-
     - name: Create mount point
       ansible.builtin.file:
         path: "{{ docker_mount_point }}"
@@ -68,7 +52,7 @@
         owner: root
         group: root
         mode: "0644"
-      notify: restart containerd
+      notify: Restart containerd
 
     - name: Configure docker cleanup
       ansible.builtin.include_tasks: ../tasks/docker_cleanup_cron.yml

@@ -65,13 +65,16 @@
           version = 2
           root = "{{ containerd_root }}"
         dest: /etc/containerd/config.toml
+        owner: root
+        group: root
+        mode: "0644"
       notify: restart containerd
 
     - name: Configure docker cleanup
       ansible.builtin.include_tasks: ../tasks/docker_cleanup_cron.yml
 
   handlers:
-    - name: restart containerd
+    - name: Restart containerd
       ansible.builtin.systemd:
         name: containerd
         state: restarted

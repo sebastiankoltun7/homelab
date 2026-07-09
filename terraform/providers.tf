@@ -5,6 +5,12 @@ terraform {
       version = "0.108.0"
     }
   }
+  cloud {
+    organization = "Koltuns-HomeLab"
+    workspaces {
+      name = "homelab-infra"
+    }
+  }
 }
 
 provider "proxmox" {

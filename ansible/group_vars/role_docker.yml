@@ -6,9 +6,6 @@ docker_mount_point: "/mnt/docker-data"
 docker_engine_root: "{{ docker_mount_point }}/docker-engine"
 containerd_root: "{{ docker_mount_point }}/containerd-data"
 
-# User settings
-docker_target_user: "skoltun"
-
 # Docker Daemon Options
 docker_daemon_options:
   data-root: "{{ docker_engine_root }}"

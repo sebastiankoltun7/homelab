@@ -17,4 +17,4 @@
     hour: "{{ docker_cleanup_cron_hour }}"
     weekday: "{{ docker_cleanup_cron_weekday }}"
     job: "{{ docker_cleanup_command }}"
-    user: "{{ docker_target_user }}"
+    user: "root"

@@ -56,8 +56,6 @@
         name: geerlingguy.docker
       vars:
         docker_daemon_config: "{{ docker_daemon_options }}"
-        docker_users:
-          - "{{ docker_target_user }}"
         docker_install_compose: true
         docker_compose_package: docker-compose-plugin
 

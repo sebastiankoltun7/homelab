@@ -43,6 +43,19 @@
         docker_install_compose: true
         docker_compose_package: docker-compose-plugin
 
+    - name: Ensure docker group exists
+      ansible.builtin.group:
+        name: docker
+        state: present
+      become: true
+
+    - name: Add user to docker group
+      ansible.builtin.user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
+      become: true
+
     - name: Configure containerd root directory
       ansible.builtin.copy:
         content: |

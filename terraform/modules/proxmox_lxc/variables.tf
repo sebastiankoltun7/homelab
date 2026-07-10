@@ -14,6 +14,9 @@ variable "os_template_source" {
   description = "OS template download link"
 }
 
+variable "tags" {
+  type = list(string)
+}
 
 variable "memory" {
   type        = number

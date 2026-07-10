@@ -22,7 +22,7 @@ resource "proxmox_virtual_environment_file" "debian_template" {
 resource "proxmox_virtual_environment_container" "lxc_container" {
   node_name = "pve"
   vm_id     = var.vm_id
-
+  tags      = var.tags
   memory {
     dedicated = var.memory
   }

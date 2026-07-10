@@ -3,7 +3,7 @@ module "docker_vm" {
   source  = "../proxmox_vm"
   vm_id   = var.vm_id
   vm_name = var.vm_name
-  vm_tags = ["env-prod", "role-docker", "managment-plane"]
+  vm_tags = concat(["managment-plane"], var.tags)
 
   # OS Image
   distro_image_url = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
@@ -13,9 +13,9 @@ module "docker_vm" {
   vm_ip_gateway = "192.168.1.1"
 
   # Resources
-  vm_cpus              = 2
-  vm_memory_dedicated  = 2048
-  vm_memory_floating   = 8192
+  vm_cpus             = 2
+  vm_memory_dedicated = 2048
+  vm_memory_floating  = 8192
 
   vm_disks = [
     {
@@ -41,13 +41,16 @@ module "docker_vm" {
 
 //Overrides
 variable "vm_id" {
-    type = number
+  type = number
 }
 variable "vm_name" {
   type = string
 }
 variable "vm_ip" {
   type = string
+}
+variable "tags" {
+  type = list(string)
 }
 variable "vm_admin_username" {
   type = string

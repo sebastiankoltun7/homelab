@@ -1,4 +1,4 @@
-variable "vm_id" {
+variable "id" {
   type        = number
   description = "Proxmox VM ID"
 }
@@ -44,7 +44,7 @@ variable "ip_address" {
   description = "LXC container IP address"
 }
 
-variable "gateway_ip" {
+variable "ip_gateway" {
   type        = string
   default     = "192.168.1.1"
   description = "LXC container IP gateway"

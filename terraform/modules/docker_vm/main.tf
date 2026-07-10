@@ -1,15 +1,15 @@
 //Composite module
 module "docker_vm" {
   source  = "../proxmox_vm"
-  vm_id   = var.vm_id
-  vm_name = var.vm_name
+  id      = var.id
+  vm_name = var.name
   vm_tags = concat(["managment-plane"], var.tags)
 
   # OS Image
   distro_image_url = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"
 
   # Network
-  vm_ip         = var.vm_ip
+  vm_ip         = var.ip
   vm_ip_gateway = "192.168.1.1"
 
   # Resources
@@ -36,17 +36,17 @@ module "docker_vm" {
 
   # Admin Access
   vm_admin_username    = var.vm_admin_username
-  vm_admin_ssh_pub_key = var.vm_admin_public_key
+  vm_admin_ssh_pub_key = var.ssh_pub_key
 }
 
 //Overrides
-variable "vm_id" {
+variable "id" {
   type = number
 }
-variable "vm_name" {
+variable "name" {
   type = string
 }
-variable "vm_ip" {
+variable "ip" {
   type = string
 }
 variable "tags" {
@@ -55,6 +55,6 @@ variable "tags" {
 variable "vm_admin_username" {
   type = string
 }
-variable "vm_admin_public_key" {
+variable "ssh_pub_key" {
   type = string
 }

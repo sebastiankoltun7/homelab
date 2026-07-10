@@ -1,20 +1,29 @@
-module "adguard_home" {
+module "adguard_lxc" {
   source                       = "../proxmox_lxc"
-  vm_id                        = var.vm_id
+  id                           = var.id
   lxc_name                     = var.name
   tags                         = concat(["managment-plane"], var.tags)
+
+  # Network
   ip_address                   = var.ip
-  template_datastore_id        = "local"
+  ip_gateway                   = "192.168.1.1"
+
+  # Resources
   disk_datastore_id            = "local-lvm"
   cores                        = 1
   memory                       = 512
   disk_size                    = 8
+
+  # Template
+  template_datastore_id        = "local"
   os_template_source           = "http://download.proxmox.com/images/system/debian-13-standard_13.1-2_amd64.tar.zst"
-  user_account_ssh_public_keys = [var.lxc_ssh_pub_key]
+
+  # Admin Access
+  user_account_ssh_public_keys = [var.ssh_pub_key]
 }
 
 //Overrides
-variable "vm_id" {
+variable "id" {
   type = number
 }
 variable "name" {
@@ -26,6 +35,6 @@ variable "tags" {
 variable "ip" {
   type = string
 }
-variable "lxc_ssh_pub_key" {
+variable "ssh_pub_key" {
   type = string
 }

@@ -21,7 +21,7 @@ resource "proxmox_virtual_environment_file" "debian_template" {
 # Provision the LXC Container
 resource "proxmox_virtual_environment_container" "lxc_container" {
   node_name = "pve"
-  vm_id     = var.vm_id
+  vm_id     = var.id
   tags      = var.tags
   memory {
     dedicated = var.memory
@@ -42,7 +42,7 @@ resource "proxmox_virtual_environment_container" "lxc_container" {
     ip_config {
       ipv4 {
         address = "${var.ip_address}/24"
-        gateway = var.gateway_ip
+        gateway = var.ip_gateway
       }
     }
   }

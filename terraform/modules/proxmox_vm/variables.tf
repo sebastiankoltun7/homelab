@@ -26,11 +26,11 @@ variable "vm_name" {
   }
 }
 
-variable "vm_id" {
+variable "id" {
   description = "Proxmox machine ID (unique)"
   type        = number
   validation {
-    condition     = var.vm_id >= 100 && var.vm_id <= 999999
+    condition     = var.id >= 100 && var.id <= 999999
     error_message = "The vm_id must be between 100 and 999999."
   }
 }

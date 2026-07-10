@@ -25,7 +25,7 @@ resource "proxmox_download_file" "distro_cloud_image" {
 }
 
 resource "proxmox_virtual_environment_vm" "vm_node" {
-  name      = "${var.vm_name}-${var.vm_id}"
+  name      = "${var.vm_name}"
   node_name = "pve"
   vm_id     = var.vm_id
   tags      = var.vm_tags

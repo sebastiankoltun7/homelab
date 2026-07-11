@@ -37,3 +37,7 @@ ansible-galaxy install -r requirements.yml
 ansible-playbook playbooks/install_docker.yml
 ansible-playbook playbooks/install_adguard.yml
 ```
+
+## Docker Network
+
+The Docker playbook creates a shared bridge network (`proxy-net`) used by nginx and application containers. Containers attached to this network can reach each other by container name, enabling service discovery without exposing ports on the host.

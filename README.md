@@ -216,5 +216,6 @@ docker compose up -d
 | Collection | Version | Purpose |
 |------------|---------|---------|
 | `ansible.posix` | 2.2.0 | POSIX system modules |
+| `community.docker` | 5.2.1 | Docker network and container management |
 | `community.general` | 13.0.1 | General-purpose modules |
 | `community.proxmox` | 2.0.0 | Proxmox LXC management via pct |

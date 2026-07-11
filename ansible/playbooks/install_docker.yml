@@ -42,6 +42,7 @@
         docker_daemon_config: "{{ docker_daemon_options }}"
         docker_install_compose: true
         docker_compose_package: docker-compose-plugin
+        docker_users: ["{{ ansible_user }}"]
 
     - name: Configure containerd root directory
       ansible.builtin.copy:
@@ -53,6 +54,12 @@
         group: root
         mode: "0644"
       notify: Restart containerd
+
+    - name: Ensure proxy-net exists
+      community.docker.docker_network:
+        name: proxy-net
+        driver: bridge
+        state: present
 
     - name: Configure docker cleanup
       ansible.builtin.include_tasks: ../tasks/docker_cleanup_cron.yml

@@ -4,5 +4,15 @@ all:
     role_docker:
       hosts:
         docker-host:
-          ansible_host: 192.168.1.101
+          ansible_host: 192.168.1.102
           ansible_user: skoltun
+
+    role_adguard:
+      hosts:
+        adguard-host:
+          ansible_host: 192.168.1.100
+          ansible_connection: community.proxmox.proxmox_pct_remote
+          ansible_user: root
+          ansible_private_key_file: ~/.ssh/id_ed25519
+          ansible_host_key_checking: false
+          proxmox_vmid: 101

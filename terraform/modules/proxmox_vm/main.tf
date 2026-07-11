@@ -25,9 +25,9 @@ resource "proxmox_download_file" "distro_cloud_image" {
 }
 
 resource "proxmox_virtual_environment_vm" "vm_node" {
-  name      = "${var.vm_name}"
+  name      = var.vm_name
   node_name = "pve"
-  vm_id     = var.vm_id
+  vm_id     = var.id
   tags      = var.vm_tags
 
   # After creating vm do not change it
@@ -36,7 +36,7 @@ resource "proxmox_virtual_environment_vm" "vm_node" {
   }
 
   scsi_hardware = "virtio-scsi-single"
-  boot_order = local.boot_interfaces
+  boot_order    = local.boot_interfaces
 
   dynamic "disk" {
     for_each = var.vm_disks
@@ -93,7 +93,7 @@ resource "proxmox_virtual_environment_file" "cloud_config" {
       vm_admin_username    = var.vm_admin_username
       vm_admin_ssh_pub_key = var.vm_admin_ssh_pub_key
     })
-    file_name = "cloud-init-${var.vm_id}.yaml"
+    file_name = "cloud-init-${var.id}.yaml"
   }
 
   # After creating vm do not change it

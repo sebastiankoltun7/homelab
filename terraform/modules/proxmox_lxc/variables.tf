@@ -1,4 +1,4 @@
-variable "vm_id" {
+variable "id" {
   type        = number
   description = "Proxmox VM ID"
 }
@@ -14,6 +14,9 @@ variable "os_template_source" {
   description = "OS template download link"
 }
 
+variable "tags" {
+  type = list(string)
+}
 
 variable "memory" {
   type        = number
@@ -41,7 +44,7 @@ variable "ip_address" {
   description = "LXC container IP address"
 }
 
-variable "gateway_ip" {
+variable "ip_gateway" {
   type        = string
   default     = "192.168.1.1"
   description = "LXC container IP gateway"
@@ -55,4 +58,7 @@ variable "disk_datastore_id" {
 
 variable "disk_size" {
   type = number
+}
+variable "os_template_type" {
+  type = string
 }

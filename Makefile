@@ -1,7 +1,9 @@
-.PHONY: help setup ansible-install ansible-all ansible-docker ansible-adguard ansible-dry-run tf-init tf-plan tf-apply tf-destroy all clean
+.PHONY: help setup ansible-install ansible-all ansible-docker ansible-adguard ansible-dry-run tf-init tf-plan tf-apply tf-destroy docker-context all clean
 
 ANSIBLE_DIR := ansible
 TERRAFORM_DIR := terraform
+DOCKER_USER := skoltun
+DOCKER_HOST_IP := 192.168.1.102
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -74,6 +76,10 @@ all: tf-init tf-apply ansible-install ansible-all ## Full deployment (Terraform 
 # ──────────────────────────────────────────────
 # Utility
 # ──────────────────────────────────────────────
+
+docker-context: ## Create Docker context for remote deployment
+	docker context create homelab --docker "host=ssh://$(DOCKER_USER)@$(DOCKER_HOST_IP)"
+	docker context use homelab
 
 clean: ## Remove virtual environment
 	@rm -rf $(ANSIBLE_DIR)/.venv

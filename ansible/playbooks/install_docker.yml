@@ -42,6 +42,7 @@
         docker_daemon_config: "{{ docker_daemon_options }}"
         docker_install_compose: true
         docker_compose_package: docker-compose-plugin
+        docker_users: ["{{ ansible_user }}"]
 
     - name: Configure containerd root directory
       ansible.builtin.copy:

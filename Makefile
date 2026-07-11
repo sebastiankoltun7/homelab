@@ -1,4 +1,4 @@
-.PHONY: help setup ansible-install ansible-all ansible-docker ansible-adguard ansible-dry-run tf-init tf-plan tf-apply tf-destroy docker-context all clean
+.PHONY: help setup ansible-install ansible-all ansible-docker ansible-adguard ansible-dry-run tf-init tf-plan tf-apply tf-destroy ssh-accept-keys docker-context all clean
 
 ANSIBLE_DIR := ansible
 TERRAFORM_DIR := terraform
@@ -77,7 +77,12 @@ all: tf-init tf-apply ansible-install ansible-all ## Full deployment (Terraform 
 # Utility
 # ──────────────────────────────────────────────
 
-docker-context: ## Create Docker context for remote deployment
+ssh-accept-keys: ## Accept SSH host keys for known hosts
+	@echo "Scanning SSH host keys..."
+	@ssh-keyscan -H $(DOCKER_HOST_IP) >> ~/.ssh/known_hosts 2>/dev/null || true
+	@echo "Host keys added."
+
+docker-context: ssh-accept-keys ## Create Docker context for remote deployment
 	docker context create homelab --docker "host=ssh://$(DOCKER_USER)@$(DOCKER_HOST_IP)"
 	docker context use homelab
 

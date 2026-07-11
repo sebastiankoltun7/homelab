@@ -3,6 +3,8 @@ services:
     image: 'jc21/nginx-proxy-manager:latest'
     container_name: nginx
     restart: unless-stopped
+    environment:
+      - TZ=Europe/Warsaw
     ports:
       - '80:80'
       - '443:443'

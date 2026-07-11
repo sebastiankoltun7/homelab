@@ -23,6 +23,12 @@ resource "proxmox_virtual_environment_container" "lxc_container" {
   node_name = "pve"
   vm_id     = var.id
   tags      = var.tags
+
+  unprivileged = true
+  features {
+    nesting = true
+  }
+
   memory {
     dedicated = var.memory
   }
@@ -32,6 +38,7 @@ resource "proxmox_virtual_environment_container" "lxc_container" {
 
   operating_system {
     template_file_id = proxmox_virtual_environment_file.debian_template.id
+    type = var.os_template_type
   }
 
   initialization {

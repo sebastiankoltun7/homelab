@@ -1,0 +1,27 @@
+---
+- name: AdGuard Home installation
+  hosts: role_adguard
+  gather_facts: false
+
+  tasks:
+    - name: Download the AdGuard Home installation script
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
+        dest: /tmp/install_adguard.sh
+        mode: "0755"
+
+    - name: Install AdGuard Home
+      ansible.builtin.command: /tmp/install_adguard.sh
+      args:
+        creates: /opt/AdGuardHome/AdGuardHome
+
+    - name: Enable and start AdGuard Home service
+      ansible.builtin.systemd:
+        name: AdGuardHome
+        state: started
+        enabled: true
+
+    - name: Remove installation script
+      ansible.builtin.file:
+        path: /tmp/install_adguard.sh
+        state: absent

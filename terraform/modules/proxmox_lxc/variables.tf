@@ -59,3 +59,6 @@ variable "disk_datastore_id" {
 variable "disk_size" {
   type = number
 }
+variable "os_template_type" {
+  type = string
+}

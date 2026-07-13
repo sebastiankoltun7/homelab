@@ -7,11 +7,16 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      - MINIO_ROOT_USER=${MINIO_USER}
-      - MINIO_ROOT_PASSWORD=${MINIO_PASS}
-      - GOMEMLIMIT=400MiB
-      - VIRTUAL_HOST=minio.internal
-      - VIRTUAL_PORT=9001
+      MINIO_ROOT_USER: ${MINIO_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASS}
+      GOMEMLIMIT: 400MiB
+      VIRTUAL_HOST_MULTIPORTS: |-
+        minio.internal:
+          "/":
+            port: 9001
+        s3.minio.internal:
+          "/":
+            port: 9000
     volumes:
       - minio_data:/data
     networks:

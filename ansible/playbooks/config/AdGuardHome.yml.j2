@@ -10,9 +10,11 @@ dns:
     - '::'
   port: 53
   rewrites:
-    - domain: '*.internal'
-      answer: 192.168.1.102
-      enabled: true
+{% for rewrite in adguard_dns_rewrites %}
+    - domain: '{{ rewrite.domain }}'
+      answer: {{ rewrite.answer }}
+      enabled: {{ rewrite.enabled | lower }}
+{% endfor %}
 
 users:
   - name: skoltun

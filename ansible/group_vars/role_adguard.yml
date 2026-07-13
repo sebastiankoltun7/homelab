@@ -1,6 +1,8 @@
 # AdGuard Home
 adguard_http_address: "192.168.1.101:80"
 adguard_docker_host_ip: "{{ hostvars['docker-host']['ansible_host'] }}"
+
+adguard_admin_username: "skoltun"
 adguard_dns_rewrites:
   - domain: "*.internal"
     answer: "{{ adguard_docker_host_ip }}"

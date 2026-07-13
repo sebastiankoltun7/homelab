@@ -17,7 +17,7 @@ dns:
 {% endfor %}
 
 users:
-  - name: skoltun
+  - name: {{ adguard_admin_username }}
     password: {{ adguard_admin_password_hash }}
 
 dashboard:

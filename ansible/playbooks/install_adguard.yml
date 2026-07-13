@@ -15,22 +15,22 @@
         name: AdGuardHome
       register: adguard_service
 
-    - name: Download AdGuard Home install script
-      ansible.builtin.get_url:
-        url: https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
-        dest: /tmp/install_adguard.sh
-        mode: "0755"
-      when: adguard_service.status.ActiveState != "active"
-
     - name: Install AdGuard Home
-      ansible.builtin.command: /tmp/install_adguard.sh -r
       when: adguard_service.status.ActiveState != "active"
+      block:
+        - name: Download AdGuard Home install script
+          ansible.builtin.get_url:
+            url: https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
+            dest: /tmp/install_adguard.sh
+            mode: "0755"
 
-    - name: Remove installation script
-      ansible.builtin.file:
-        path: /tmp/install_adguard.sh
-        state: absent
-      when: adguard_service.status.ActiveState != "active"
+        - name: Run AdGuard Home install script
+          ansible.builtin.command: /tmp/install_adguard.sh -r
+
+        - name: Remove installation script
+          ansible.builtin.file:
+            path: /tmp/install_adguard.sh
+            state: absent
 
     - name: Deploy AdGuardHome.yaml
       ansible.builtin.template:

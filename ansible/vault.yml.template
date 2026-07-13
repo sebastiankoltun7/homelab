@@ -1,0 +1,6 @@
+# Secrets - copy to group_vars/all/vault.yml and fill in values
+# This file is tracked in git. vault.yml is NOT.
+
+# AdGuard Home admin password (bcrypt hash)
+# Generate with: htpasswd -bnBC 10 "" 'yourpassword' | tr -d ':\n' | sed 's/$2y/$2a/'
+adguard_admin_password_hash: ""

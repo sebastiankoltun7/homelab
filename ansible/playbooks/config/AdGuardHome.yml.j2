@@ -1,0 +1,22 @@
+http:
+  address: {{ adguard_http_address }}
+
+tls:
+  enabled: false
+
+dns:
+  bind_hosts:
+    - 0.0.0.0
+    - '::'
+  port: 53
+  rewrites:
+    - domain: '*.internal'
+      answer: 192.168.1.102
+      enabled: true
+
+users:
+  - name: skoltun
+    password: {{ adguard_admin_password_hash }}
+
+dashboard:
+  theme: dark

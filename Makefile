@@ -1,4 +1,4 @@
-.PHONY: help setup ansible-install ansible-all ansible-docker ansible-adguard ansible-dry-run tf-init tf-plan tf-apply tf-destroy ssh-accept-keys docker-context all clean
+.PHONY: help setup ansible-install ansible-all ansible-docker ansible-adguard ansible-dry-run tf-init tf-plan tf-apply tf-destroy ssh-accept-keys docker-context vault-create all clean
 
 ANSIBLE_DIR := ansible
 TERRAFORM_DIR := terraform
@@ -13,11 +13,12 @@ help: ## Show this help message
 # Setup
 # ──────────────────────────────────────────────
 
-setup: setup-venv ansible-install ## Full local setup (venv + dependencies)
+setup: setup-venv ansible-install vault-create ## Full local setup (venv + dependencies + vault)
 	@echo ""
 	@echo "Setup complete. Next steps:"
-	@echo "  1. cp terraform/terraform.tfvars.template terraform/terraform.tfvars"
-	@echo "  2. Edit terraform/terraform.tfvars with your Proxmox credentials"
+	@echo "  1. Edit ansible/group_vars/all/vault.yml with your secrets"
+	@echo "  2. cp terraform/terraform.tfvars.template terraform/terraform.tfvars"
+	@echo "  3. Edit terraform/terraform.tfvars with your Proxmox credentials"
 
 setup-venv: ## Create Python virtual environment and install dependencies
 	@echo "Creating virtual environment..."
@@ -26,6 +27,14 @@ setup-venv: ## Create Python virtual environment and install dependencies
 	@cd $(ANSIBLE_DIR) && .venv/bin/pip install --upgrade pip -q
 	@cd $(ANSIBLE_DIR) && .venv/bin/pip install paramiko proxmoxer requests -q
 	@echo "Python environment ready."
+
+vault-create: ## Create vault.yml from template (skip if exists)
+	@if [ ! -f $(ANSIBLE_DIR)/group_vars/all/vault.yml ]; then \
+		cp $(ANSIBLE_DIR)/vault.yml.template $(ANSIBLE_DIR)/group_vars/all/vault.yml; \
+		echo "Created ansible/group_vars/all/vault.yml — fill in your secrets."; \
+	else \
+		echo "ansible/group_vars/all/vault.yml already exists, skipping."; \
+	fi
 
 # ──────────────────────────────────────────────
 # Ansible

@@ -14,12 +14,36 @@ See the [project README](../README.md) for full documentation.
 
 ```bash
 # From the project root
-make setup          # Create venv + install dependencies
+make setup          # Create venv + install dependencies + vault
 make ansible-install # Install Ansible collections
 
 # Deploy services
 make ansible-docker   # Docker host
 make ansible-adguard  # AdGuard Home
+```
+
+## Vault (Secrets)
+
+Secrets live in `group_vars/all/vault.yml` (gitignored). On first run `make setup` copies the template for you.
+
+```bash
+# Manually create if needed
+make vault-create
+
+# Edit with your values
+$EDITOR group_vars/all/vault.yml
+```
+
+Required variables:
+
+| Variable | Description |
+|---|---|
+| `adguard_admin_password_hash` | bcrypt hash of the AdGuard Home admin password |
+
+Generate a bcrypt hash:
+
+```bash
+htpasswd -bnBC 10 "" 'yourpassword' | tr -d ':\n' | sed 's/$2y/$2a/'
 ```
 
 ## Manual Setup

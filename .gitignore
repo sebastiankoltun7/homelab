@@ -18,7 +18,7 @@ roles/
 *.retry
 
 # --- Secrets & Configs ---
-*.vault
+vault.yml
 *.creds.yml
 proxmox_creds.yml
 group_vars/all/vault.yml

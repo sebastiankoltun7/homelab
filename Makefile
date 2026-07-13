@@ -1,70 +1,35 @@
-.PHONY: help setup ansible-install ansible-all ansible-docker ansible-adguard ansible-dry-run tf-init tf-plan tf-apply tf-destroy ssh-accept-keys docker-context vault-create all clean
+.PHONY: help setup clean all \
+       tf-init tf-plan tf-apply tf-destroy \
+       ansible-install ansible-all ansible-adguard ansible-docker ansible-dry-run \
+       vault-create docker-context ssh-accept-keys
 
 ANSIBLE_DIR := ansible
 TERRAFORM_DIR := terraform
 DOCKER_USER := skoltun
 DOCKER_HOST_IP := 192.168.1.102
+ANSIBLE_PLAYBOOK = cd $(ANSIBLE_DIR) && ansible-playbook
 
-help: ## Show this help message
+help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-# ──────────────────────────────────────────────
-# Setup
-# ──────────────────────────────────────────────
+# ── Setup ──────────────────────────────────────
 
-setup: setup-venv ansible-install vault-create ## Full local setup (venv + dependencies + vault)
-	@echo ""
-	@echo "Setup complete. Next steps:"
-	@echo "  1. Edit ansible/group_vars/all/vault.yml with your secrets"
-	@echo "  2. cp terraform/terraform.tfvars.template terraform/terraform.tfvars"
-	@echo "  3. Edit terraform/terraform.tfvars with your Proxmox credentials"
+setup: setup-venv ansible-install vault-create ## Full local setup
+	@echo "Done. Edit vault.yml and terraform.tfvars, then run 'make all'."
 
-setup-venv: ## Create Python virtual environment and install dependencies
-	@echo "Creating virtual environment..."
+setup-venv: ## Create venv and install dependencies
 	@cd $(ANSIBLE_DIR) && python3 -m venv .venv
-	@echo "Installing Python packages..."
 	@cd $(ANSIBLE_DIR) && .venv/bin/pip install --upgrade pip -q
 	@cd $(ANSIBLE_DIR) && .venv/bin/pip install paramiko proxmoxer requests -q
-	@echo "Python environment ready."
 
 vault-create: ## Create vault.yml from template (skip if exists)
-	@if [ ! -f $(ANSIBLE_DIR)/group_vars/all/vault.yml ]; then \
-		cp $(ANSIBLE_DIR)/vault.yml.template $(ANSIBLE_DIR)/group_vars/all/vault.yml; \
-		echo "Created ansible/group_vars/all/vault.yml — fill in your secrets."; \
-	else \
-		echo "ansible/group_vars/all/vault.yml already exists, skipping."; \
-	fi
+	@test -f $(ANSIBLE_DIR)/group_vars/all/vault.yml && echo "vault.yml exists, skipping." || \
+		(cp $(ANSIBLE_DIR)/vault.yml.template $(ANSIBLE_DIR)/group_vars/all/vault.yml && echo "Created vault.yml")
 
-# ──────────────────────────────────────────────
-# Ansible
-# ──────────────────────────────────────────────
+# ── Terraform ──────────────────────────────────
 
-ansible-install: ## Install Ansible collections from requirements.yml
-	@echo "Installing Ansible collections..."
-	@cd $(ANSIBLE_DIR) && ansible-galaxy install -r requirements.yml --force
-	@echo "Collections installed."
-
-ansible-all: ## Run all Ansible playbooks
-	@echo "Running all playbooks..."
-	@cd $(ANSIBLE_DIR) && ansible-playbook playbooks/install_adguard.yml
-	@cd $(ANSIBLE_DIR) && ansible-playbook playbooks/install_docker.yml
-
-ansible-docker: ## Deploy Docker host
-	@cd $(ANSIBLE_DIR) && ansible-playbook playbooks/install_docker.yml
-
-ansible-adguard: ## Deploy AdGuard Home
-	@cd $(ANSIBLE_DIR) && ansible-playbook playbooks/install_adguard.yml
-
-ansible-dry-run: ## Dry-run all playbooks (check mode)
-	@cd $(ANSIBLE_DIR) && ansible-playbook playbooks/install_adguard.yml --check
-	@cd $(ANSIBLE_DIR) && ansible-playbook playbooks/install_docker.yml --check
-
-# ──────────────────────────────────────────────
-# Terraform
-# ──────────────────────────────────────────────
-
-tf-init: ## Initialize Terraform providers and modules
+tf-init: ## Initialize Terraform
 	@cd $(TERRAFORM_DIR) && terraform init
 
 tf-plan: ## Preview infrastructure changes
@@ -73,28 +38,40 @@ tf-plan: ## Preview infrastructure changes
 tf-apply: ## Apply infrastructure changes
 	@cd $(TERRAFORM_DIR) && terraform apply
 
-tf-destroy: ## Destroy all managed infrastructure
+tf-destroy: ## Destroy all infrastructure
 	@cd $(TERRAFORM_DIR) && terraform destroy
 
-# ──────────────────────────────────────────────
-# Combined
-# ──────────────────────────────────────────────
+# ── Ansible ────────────────────────────────────
+
+ansible-install: ## Install Ansible collections
+	@cd $(ANSIBLE_DIR) && ansible-galaxy install -r requirements.yml --force
+
+ansible-all: ## Run all playbooks
+	$(ANSIBLE_PLAYBOOK) playbooks/install_adguard.yml
+	$(ANSIBLE_PLAYBOOK) playbooks/install_docker.yml
+
+ansible-adguard: ## Deploy AdGuard Home
+	$(ANSIBLE_PLAYBOOK) playbooks/install_adguard.yml
+
+ansible-docker: ## Deploy Docker host
+	$(ANSIBLE_PLAYBOOK) playbooks/install_docker.yml
+
+ansible-dry-run: ## Dry-run all playbooks
+	$(ANSIBLE_PLAYBOOK) playbooks/install_adguard.yml --check
+	$(ANSIBLE_PLAYBOOK) playbooks/install_docker.yml --check
+
+# ── Combined ───────────────────────────────────
 
 all: tf-init tf-apply ansible-install ansible-all ## Full deployment (Terraform + Ansible)
 
-# ──────────────────────────────────────────────
-# Utility
-# ──────────────────────────────────────────────
+# ── Utility ────────────────────────────────────
 
-ssh-accept-keys: ## Accept SSH host keys for known hosts
-	@echo "Scanning SSH host keys..."
+ssh-accept-keys: ## Accept SSH host keys
 	@ssh-keyscan -H $(DOCKER_HOST_IP) >> ~/.ssh/known_hosts 2>/dev/null || true
-	@echo "Host keys added."
 
-docker-context: ssh-accept-keys ## Create Docker context for remote deployment
-	docker context create homelab --docker "host=ssh://$(DOCKER_USER)@$(DOCKER_HOST_IP)"
-	docker context use homelab
+docker-context: ssh-accept-keys ## Setup remote Docker context
+	@docker context create homelab --docker "host=ssh://$(DOCKER_USER)@$(DOCKER_HOST_IP)"
+	@docker context use homelab
 
-clean: ## Remove virtual environment
+clean: ## Remove venv
 	@rm -rf $(ANSIBLE_DIR)/.venv
-	@echo "Virtual environment removed."

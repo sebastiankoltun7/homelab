@@ -258,6 +258,23 @@ docker ps
 
 ## Troubleshooting
 
+### SSH host key changed
+
+After Terraform recreates a VM, SSH host keys change and connections fail with "Host key verification failed" or timeout.
+
+```bash
+make ssh-cleanup         # remove stale host keys
+make ansible-docker      # reconnects with fresh keys
+```
+
+`make all` runs `ssh-cleanup` automatically before ansible, so this only affects manual `make ansible-*` runs on existing infrastructure.
+
+### Manual SSH key acceptance
+
+```bash
+make ssh-accept-keys     # scan and add host keys to known_hosts
+```
+
 ### Terraform fails to connect to Proxmox
 
 - Verify API token credentials in `terraform.tfvars`

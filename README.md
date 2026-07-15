@@ -24,25 +24,6 @@ make docker-context      # remote Docker context setup
 make clean               # remove venv
 ```
 
-## Troubleshooting
-
-### SSH host key changed
-
-After Terraform recreates a VM, SSH host keys change and connections fail with "Host key verification failed" or timeout.
-
-```bash
-make ssh-cleanup         # remove stale host keys
-make ansible-docker      # reconnects with fresh keys
-```
-
-`make all` runs `ssh-cleanup` automatically before ansible, so this only affects manual `make ansible-*` runs on existing infrastructure.
-
-### Manual SSH key acceptance
-
-```bash
-make ssh-accept-keys     # scan and add host keys to known_hosts
-```
-
 ## Infrastructure
 
 | Host | Type | IP | Purpose |
@@ -52,7 +33,7 @@ make ssh-accept-keys     # scan and add host keys to known_hosts
 
 ## Documentation
 
-- [Initial Setup](docs/setup.md) - Prerequisites, Proxmox config, first deployment
+- [Initial Setup](docs/setup.md) - Prerequisites, Proxmox config, first deployment, troubleshooting
 - [Local Network Setup](docs/network-setup.md) - DNS configuration, client setup, troubleshooting
 
 ## Prerequisites

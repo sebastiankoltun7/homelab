@@ -1,5 +1,7 @@
 # Homelab
 
+![Dell OptiPlex Homelab](docs/images/dell_optiplex.png)
+
 Proxmox VE homelab managed with Terraform and Ansible. Single `make all` provisions infrastructure, configures hosts, and deploys apps.
 
 ## Quick Start

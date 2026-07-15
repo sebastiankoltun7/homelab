@@ -10,6 +10,17 @@
 
 Subnet: `192.168.1.0/24`
 
+## DHCP and IP Assignment
+
+This setup assumes your router uses default DHCP (automatically assigns IPs from a pool).
+
+**Important:** Terraform assigns static IPs to the homelab hosts (`.101`, `.102`). To prevent your router from assigning these IPs to other devices:
+
+1. **Set static DHCP reservation for Proxmox host** (`.100`) in your router
+2. **Reserve the homelab IP range** (`.100-.110`) in your router's DHCP pool to avoid collisions
+
+Without this, a power cycle or DHCP lease renewal could assign `192.168.1.101` to a different device, breaking your network.
+
 ## DNS Setup Options
 
 ### Option 1: Router DNS (Simplest)

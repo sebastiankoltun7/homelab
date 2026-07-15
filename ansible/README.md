@@ -6,9 +6,9 @@ See the [project README](../README.md) for full documentation.
 
 ## Prerequisites
 
-- **Ansible Core:** 2.21.0 or higher
+- **Ansible Core:** 2.14 or higher
 - **Python:** 3.12+
-- **Environment:** WSL2 / Linux
+- **Environment:** WSL2 / Linux / macOS
 
 ## Quick Start
 
@@ -38,6 +38,7 @@ Required variables:
 
 | Variable | Description |
 |---|---|
+| `admin_username` | Admin username for VMs and AdGuard dashboard |
 | `adguard_admin_password_hash` | bcrypt hash of the AdGuard Home admin password |
 
 Generate a bcrypt hash:

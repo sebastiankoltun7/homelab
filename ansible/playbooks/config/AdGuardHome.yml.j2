@@ -7,7 +7,9 @@ tls:
 dns:
   bind_hosts:
     - 0.0.0.0
+{% if adguard_dns_ipv6 | default(false) %}
     - '::'
+{% endif %}
   port: 53
   rewrites:
 {% for rewrite in adguard_dns_rewrites %}

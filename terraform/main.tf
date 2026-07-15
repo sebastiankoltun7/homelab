@@ -13,6 +13,6 @@ module "docker" {
   name              = "docker"
   tags              = ["role-docker"]
   ip                = "192.168.1.102"
-  vm_admin_username = "skoltun"
+  vm_admin_username = var.admin_username
   ssh_pub_key       = var.vm_ssh_pub_key
 }

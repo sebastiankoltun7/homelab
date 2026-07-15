@@ -14,3 +14,8 @@ variable "vm_ssh_pub_key" {
   type        = string
   description = "SSH public key added to vm ssh_authorized_keys"
 }
+
+variable "admin_username" {
+  type        = string
+  description = "Admin username for VMs and services"
+}

@@ -1,3 +1,6 @@
+# Connection
+ansible_user: "{{ admin_username }}"
+
 # Disk configuration
 docker_disk_id: "/dev/disk/by-id/virtio-DOCKER-DATA"
 docker_mount_point: "/mnt/docker-data"

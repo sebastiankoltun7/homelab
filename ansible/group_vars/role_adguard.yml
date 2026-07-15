@@ -2,7 +2,8 @@
 adguard_http_address: "192.168.1.101:80"
 adguard_docker_reverse_proxy_ip: "192.168.1.102"
 
-adguard_admin_username: "skoltun"
+adguard_dns_ipv6: true
+adguard_admin_username: "{{ admin_username }}"
 adguard_dns_rewrites:
   - domain: "adguard.internal"
     answer: "{{ adguard_http_address.split(':')[0] }}"

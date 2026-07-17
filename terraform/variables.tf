@@ -1,10 +1,13 @@
 variable "proxmox" {
   type = object({
-    ip                 = string
-    port               = string
-    username           = string
-    api_token          = string
-    root_ssh_key_location   = string
+    ip                    = string
+    port                  = string
+    username              = string
+    api_token             = string
+    root_ssh_key_location = string
+    insecure              = optional(bool, true)
+    ssh_username          = optional(string, "root")
+    node_name             = optional(string, "pve")
   })
   sensitive = true
   description = "Proxmox access configuration"

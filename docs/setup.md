@@ -128,6 +128,19 @@ This creates:
 
 ### 2. Configure Terraform
 
+**Local state storage:** By default, Terraform state is stored in Terraform Cloud. To use local state instead, remove the `cloud` block from `terraform/providers.tf`:
+
+```hcl
+terraform {
+  required_providers {
+    proxmox = {
+      source  = "bpg/proxmox"
+      version = "0.108.0"
+    }
+  }
+}
+```
+
 Edit `terraform/terraform.tfvars`:
 
 ```hcl
@@ -137,6 +150,9 @@ proxmox = {
   username              = "terraform@pve!terraform-token"  # API token format
   api_token             = "terraform@pam!token_id=xxxxxxxx" # Token value
   root_ssh_key_location = "~/.ssh/id_ed25519" # SSH private key path
+  insecure              = true               # Skip TLS verification (default: true)
+  ssh_username          = "root"             # SSH username for Proxmox (default: "root")
+  node_name             = "pve"              # Proxmox node name (default: "pve")
 }
 vm_ssh_pub_key    = "ssh-ed25519 AAAA..."     # Public key for VMs
 admin_username    = "your-username"            # Admin user for all services
@@ -151,6 +167,9 @@ admin_username    = "your-username"            # Admin user for all services
 | `proxmox.username` | API token in format `user@realm!token-id` |
 | `proxmox.api_token` | Token secret from Proxmox UI |
 | `proxmox.root_ssh_key_location` | Path to SSH private key for Proxmox/VM access |
+| `proxmox.insecure` | Skip TLS verification (default: true) |
+| `proxmox.ssh_username` | SSH username for Proxmox host (default: "root") |
+| `proxmox.node_name` | Proxmox node name (default: "pve") |
 | `vm_ssh_pub_key` | Public key deployed to created VMs |
 | `admin_username` | Username created on VMs and used for services |
 

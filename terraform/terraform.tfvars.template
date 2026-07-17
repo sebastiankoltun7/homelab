@@ -4,6 +4,9 @@ proxmox = {
   username              = "terraform@pve!terraform-token"
   api_token             = "terraform@pam!terraform_token=XXXXXXXXXXXXXXXXXXXX"
   root_ssh_key_location = "~/.ssh/id_ed25519"
+  insecure              = true
+  ssh_username          = "root"
+  node_name             = "pve"
 }
 vm_ssh_pub_key    = "ssh-ed25519 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 admin_username    = "your-username"

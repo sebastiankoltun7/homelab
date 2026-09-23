@@ -1,0 +1,18 @@
+---
+- name: Mount external disks on the Proxmox host
+  hosts: pve
+  gather_facts: false
+
+  tasks:
+    - name: Ensure external disks are configured
+      ansible.builtin.fail:
+        msg: |-
+          Set `external_disks` in ansible/group_vars/pve.yml and fill
+          `by_id` (find it with `ls -l /dev/disk/by-id`).
+      when: external_disks | default([]) | length == 0
+
+    - name: Configure each external disk
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../tasks/configure_external_disk.yml"
+      loop: "{{ external_disks }}"
+      loop_control:
+        label: "{{ item.name }}"

@@ -21,6 +21,8 @@ make tf-plan             # preview infrastructure
 make tf-apply            # apply infrastructure
 make ansible-adguard     # deploy AdGuard Home
 make ansible-docker      # deploy Docker host
+make ansible-plex        # deploy Plex Media Server
+make ansible-pve         # mount external USB disks on Proxmox
 make ansible-dry-run     # check mode all playbooks
 make docker-context      # remote Docker context setup
 make clean               # remove venv
@@ -32,6 +34,7 @@ make clean               # remove venv
 |------|------|----|---------|
 | adguard | LXC (Debian 13) | 192.168.1.101 | DNS ad blocking |
 | docker | VM (Ubuntu 24.04) | 192.168.1.102 | Container runtime |
+| plex | LXC (Debian 13) | 192.168.1.103 | Plex Media Server (media + config on USB SSD) |
 
 ## Documentation
 

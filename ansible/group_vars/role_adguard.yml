@@ -10,6 +10,9 @@ adguard_dns_rewrites:
   - domain: "adguard.internal"
     answer: "{{ adguard_http_address.split(':')[0] }}"
     enabled: true
+  - domain: "plex.internal"
+    answer: "192.168.1.103"
+    enabled: true
   - domain: "*.internal"
     answer: "{{ adguard_docker_reverse_proxy_ip }}"
     enabled: true

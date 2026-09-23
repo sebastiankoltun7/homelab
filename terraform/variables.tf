@@ -9,7 +9,7 @@ variable "proxmox" {
     ssh_username          = optional(string, "root")
     node_name             = optional(string, "pve")
   })
-  sensitive = true
+  sensitive   = true
   description = "Proxmox access configuration"
 }
 

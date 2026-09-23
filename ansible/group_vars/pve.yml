@@ -1,0 +1,20 @@
+# External drives attached to the Proxmox host.
+# Point at each drive with its stable /dev/disk/by-id name, e.g.:
+#   ls -l /dev/disk/by-id/ | grep -i usb
+# The playbook detects UUID and filesystem type automatically and mounts
+# the drive persistently (fstab by UUID) at /mnt/pve/<name>.
+#
+#   assert_dirs  - directories that must already exist on the drive (media)
+#   create_dirs  - directories created if missing (config). 0777 so the
+#                  unprivileged container's 'plex' user can write through
+#                  the bind mount (uid mapping is not predictable).
+#   dir_mode     - permission for created directories (default: 0755)
+external_disks:
+  - name: ssd-backup
+    by_id: "usb-BIueendIess_BIueendIess_0BIueendIes6-0:0-part1"
+    opts: "defaults"
+    dir_mode: "0777"
+    assert_dirs:
+      - PlexMedia
+    create_dirs:
+      - PlexConfig

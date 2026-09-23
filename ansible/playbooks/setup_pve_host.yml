@@ -1,0 +1,84 @@
+---
+- name: Configure Proxmox host for the plex LXC (binds + GPU)
+  hosts: pve
+  gather_facts: false
+
+  vars:
+    plex_vmid: 103
+    plex_config_file: "/etc/pve/lxc/103.conf"
+    plex_mounts:
+      - id: mp0
+        host_path: "/mnt/pve/ssd-backup/PlexMedia"
+        container_path: "/PlexMedia"
+      - id: mp1
+        host_path: "/mnt/pve/ssd-backup/PlexConfig"
+        container_path: "/plex-config"
+    plex_device_lines:
+      - "lxc.cgroup2.devices.allow: c 226:* rwm"
+      - "lxc.mount.entry: /dev/dri/dri dev/dri none bind,optional,create=dir"
+      - "lxc.mount.entry: /dev/dri/renderD128 dev/dri/renderD128 none bind,optional,create=file"
+    plex_dri_devices:
+      - /dev/dri/dri
+      - /dev/dri/card0
+      - /dev/dri/card1
+      - /dev/dri/renderD128
+
+  tasks:
+    - name: Ensure the plex container config exists
+      ansible.builtin.stat:
+        path: "{{ plex_config_file }}"
+      register: plex_cfg
+
+    - name: Fail when the plex container was not created
+      ansible.builtin.fail:
+        msg: "Container {{ plex_vmid }} is missing. Run `make tf-apply` first."
+      when: not plex_cfg.stat.exists
+
+    - name: Read current container config
+      ansible.builtin.command: cat {{ plex_config_file }}
+      register: plex_conf
+      changed_when: false
+
+    - name: Apply bind mount points via pct
+      ansible.builtin.command: >
+        pct set {{ plex_vmid }}
+        --{{ item.id }} {{ item.host_path }},mp={{ item.container_path }}
+      loop: "{{ plex_mounts }}"
+      loop_control:
+        label: "{{ item.id }}: {{ item.host_path }} -> {{ item.container_path }}"
+      when: plex_conf.stdout.find(item.id ~ ':') == -1
+      notify: Restart plex container
+
+    - name: Add GPU passthrough entries to the container config
+      ansible.builtin.lineinfile:
+        path: "{{ plex_config_file }}"
+        line: "{{ item }}"
+        create: true
+      loop: "{{ plex_device_lines }}"
+      notify: Restart plex container
+
+    - name: Remove stale GPU entries (devices that no longer exist)
+      ansible.builtin.lineinfile:
+        path: "{{ plex_config_file }}"
+        line: "lxc.mount.entry: /dev/dri/card0 dev/dri/card0 none bind,optional,create=file"
+        state: absent
+      notify: Restart plex container
+
+    - name: Make GPU devices accessible (homelab; map to unprivileged plex)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        mode: "0666"
+      loop: "{{ plex_dri_devices }}"
+      loop_control:
+        label: "{{ item }}"
+      when: item is exists
+
+  handlers:
+    - name: Stop plex container
+      ansible.builtin.command: pct stop {{ plex_vmid }}
+      listen: Restart plex container
+      changed_when: true
+    - name: Start plex container
+      ansible.builtin.command: pct start {{ plex_vmid }}
+      listen: Restart plex container
+      changed_when: true

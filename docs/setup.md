@@ -158,17 +158,20 @@ vm_ssh_pub_key    = "ssh-ed25519 AAAA..."     # Public key for VMs
 admin_username    = "your-username"            # Admin user for all services
 ```
 
-> **API user:** use a dedicated least-privilege user, **never** `root@pam`. Create it on the Proxmox
-> host (token must be `--privsep 0` so it inherits the user's ACLs):
+> **API user:** use a dedicated automation user, **never** `root@pam`. Create it with the
+> `Administrator` role on `/` (token must be `--privsep 0` so it inherits the user's ACLs):
 >
 > ```bash
 > pveum user add tf-infra@pve --enable 1
-> pveum aclmod / -user tf-infra@pve -role PVEAuditor
-> for v in 101 102 103; do pveum aclmod /vms/$v -user tf-infra@pve -role PVEVMAdmin; done
-> pveum aclmod /storage/local -user tf-infra@pve -role PVEDatastoreUser
-> pveum aclmod /storage/local-lvm -user tf-infra@pve -role PVEDatastoreUser
+> pveum aclmod / -user tf-infra@pve -role Administrator
 > pveum user token add tf-infra@pve tf --privsep 0
 > ```
+>
+> The `Administrator` role is **required** (narrower scopes break Terraform):
+> - Per-VMID paths (`/vms/<id>`) cannot cover VMIDs that do not exist yet, so creating a new host 403s.
+> - Image/URL downloads need node-level privileges: `query-url-metadata` and `download-url` require
+>   `Sys.Audit` **and** `Sys.Modify` on `/` (PVE `perm` privilege lists are ANDed) or
+>   `Sys.AccessNetwork` on `/nodes/<node>` — neither is covered by `PVEAdmin`/`PVEVMAdmin`.
 >
 > Bind mounts and device passthrough on LXC can only be applied by `root@pam` itself
 > (no API token, not even a root one); those are handled out-of-band by the
@@ -180,7 +183,7 @@ admin_username    = "your-username"            # Admin user for all services
 |-------|-------------|
 | `proxmox.ip` | Proxmox host IP address |
 | `proxmox.port` | Proxmox web UI port (default: 8006) |
-| `proxmox.username` | API token in format `user@realm!token-id` (dedicated low-priv user; not `root@pam`)
+| `proxmox.username` | API token in format `user@realm!token-id` (dedicated automation user with `Administrator` role; not `root@pam`)
 | `proxmox.api_token` | Token secret from Proxmox UI |
 | `proxmox.root_ssh_key_location` | Path to SSH private key for Proxmox/VM access |
 | `proxmox.insecure` | Skip TLS verification (default: true) |

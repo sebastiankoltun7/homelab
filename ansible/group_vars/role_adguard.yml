@@ -2,6 +2,8 @@
 adguard_http_address: "192.168.1.101:80"
 adguard_docker_reverse_proxy_ip: "192.168.1.102"
 
+adguard_tls_server_name: "adguard.internal"
+adguard_cert_directory: /opt/AdGuardHome/certs
 adguard_dns_ipv6: true
 adguard_admin_username: "{{ admin_username }}"
 adguard_dns_rewrites:

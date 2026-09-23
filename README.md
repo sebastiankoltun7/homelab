@@ -36,7 +36,7 @@ make clean               # remove venv
 ## Documentation
 
 - [Initial Setup](docs/setup.md) - Prerequisites, Proxmox config, first deployment, troubleshooting
-- [Local Network Setup](docs/network-setup.md) - DNS configuration, client setup, troubleshooting
+- [Local Network Setup](docs/network-setup.md) - DNS configuration, client setup, trusting the AdGuard TLS certificate, troubleshooting
 
 ## Prerequisites
 

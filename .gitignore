@@ -30,3 +30,6 @@ Thumbs.db
 Desktop.ini
 .vscode/
 .idea/
+
+# --- Local output ---
+/ansible/playbooks/files/

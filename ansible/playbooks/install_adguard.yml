@@ -10,13 +10,13 @@
         state: directory
         mode: '0700'
 
-    - name: Check if AdGuard Home is running
-      ansible.builtin.systemd:
-        name: AdGuardHome
-      register: adguard_service
+    - name: Check if AdGuard Home is installed
+      ansible.builtin.stat:
+        path: /opt/AdGuardHome/AdGuardHome
+      register: adguard_binary
 
     - name: Install AdGuard Home
-      when: adguard_service.status.ActiveState != "active"
+      when: not adguard_binary.stat.exists
       block:
         - name: Download AdGuard Home install script
           ansible.builtin.get_url:
@@ -25,12 +25,60 @@
             mode: "0755"
 
         - name: Run AdGuard Home install script
-          ansible.builtin.command: /tmp/install_adguard.sh -r
+          ansible.builtin.command:
+            cmd: /tmp/install_adguard.sh -r
+            creates: /opt/AdGuardHome/AdGuardHome
 
         - name: Remove installation script
           ansible.builtin.file:
             path: /tmp/install_adguard.sh
             state: absent
+
+    - name: Ensure AdGuard certificate directory exists
+      ansible.builtin.file:
+        path: /opt/AdGuardHome/certs
+        state: directory
+        mode: '0700'
+
+    - name: Remove stale certificates when regeneration is requested
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ adguard_cert_directory }}/cert.crt"
+        - "{{ adguard_cert_directory }}/private.key"
+      when: adguard_regenerate_cert | default(false)
+
+    - name: Generate self-signed TLS certificate with SANs
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509 -nodes -days 825 -newkey rsa:2048
+          -keyout {{ adguard_cert_directory }}/private.key
+          -out {{ adguard_cert_directory }}/cert.crt
+          -subj "/CN={{ adguard_tls_server_name }}"
+          -addext "subjectAltName=DNS:{{ adguard_tls_server_name }},IP:{{ adguard_http_address.split(':')[0] }}"
+        creates: "{{ adguard_cert_directory }}/cert.crt"
+
+    - name: Harden private key permissions
+      ansible.builtin.file:
+        path: "{{ adguard_cert_directory }}/private.key"
+        mode: '0600'
+        owner: root
+        group: root
+
+    - name: Ensure local playbook certificate directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/files"
+        state: directory
+        mode: '0700'
+      delegate_to: localhost
+      run_once: true
+
+    - name: Fetch certificate to local playbook directory
+      ansible.builtin.fetch:
+        src: "{{ adguard_cert_directory }}/cert.crt"
+        dest: "{{ playbook_dir }}/files/cert.crt"
+        flat: true
 
     - name: Deploy AdGuardHome.yaml
       ansible.builtin.template:

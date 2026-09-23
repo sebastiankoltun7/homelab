@@ -94,6 +94,93 @@ sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
 2. DNS tab > Click `+` > Add `192.168.1.101`
 3. TCP/IP tab > Configure IPv6: Link-local only
 
+## Trusting the AdGuard TLS certificate
+
+AdGuard Home serves its admin dashboard over `https://adguard.internal`. Because the certificate is self-signed (no public CA), browsers will warn "Your connection is not private" until you install it as a trusted certificate.
+
+The Ansible playbook generates the certificate and fetches a copy to `ansible/playbooks/files/cert.crt`. Install/trust that file on any machine that should open the dashboard over HTTPS without warnings:
+
+```bash
+# Verify the cert and its name
+openssl x509 -in ansible/playbooks/files/cert.crt -noout -subject -ext subjectAltName
+```
+
+Then import it per your OS:
+
+### Windows
+
+Via PowerShell (admin):
+
+```powershell
+Import-Certificate -FilePath "cert.crt" -CertStoreLocation Cert:\LocalMachine\Root
+```
+
+Or via `certutil` (admin):
+
+```powershell
+certutil -addstore -f Root cert.crt
+```
+
+Or GUI: double-click `cert.crt` → **Install Certificate** → **Local Machine** → **Trusted Root Certification Authorities**. Reopen the browser afterwards (Chrome/Edge read the Windows cert store at startup).
+
+To uninstall later: `certutil -delstore Root <thumbprint>` or get the thumbprint with `Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like "*adguard*"`.
+
+### Linux
+
+Debian/Ubuntu (system-wide):
+
+```bash
+sudo cp cert.crt /usr/local/share/ca-certificates/adguard.crt
+sudo update-ca-certificates
+```
+
+Then add the hostname to `/etc/hosts` if you don't use AdGuard as your DNS server:
+
+```
+192.168.1.101 adguard.internal
+```
+
+Fedora/RHEL:
+
+```bash
+sudo cp cert.crt /etc/pki/ca-trust/source/anchors/adguard.crt
+sudo update-ca-trust
+```
+
+**Chrome/Edge** on Linux uses the NSS store; import there too:
+
+```bash
+certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "AdGuard" -i cert.crt
+```
+
+Or use the GUI: `chrome://settings/certificates` → Authorities → Import.
+
+**Firefox** uses its own store:
+1. Settings → Privacy & Security → Certificates → **View Certificates** → Authorities → **Import**.
+2. Select `cert.crt` and tick "Trust this CA to identify websites".
+
+### macOS
+
+1. Double-click `cert.crt` → Keychain Access opens.
+2. Drag/copy the certificate into the **System** keychain (or click the lock, choose "Add to Keychain").
+3. Double-click the certificate → expand **Trust** → set **When using this certificate** → **Always Trust**.
+4. Close the window, enter your password to confirm. Restart the browser.
+
+Or via CLI:
+
+```bash
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain cert.crt
+```
+
+### Verifying
+
+```bash
+curl --cacert ansible/playbooks/files/cert.crt https://adguard.internal
+curl --cacert ansible/playbooks/files/cert.crt https://192.168.1.101
+```
+
+If either returns the AdGuard dashboard HTML (not a TLS error), the certificate is trusted.
+
 ## Verifying DNS is Working
 
 ```bash
@@ -107,6 +194,7 @@ dig @192.168.1.101 adguard.internal
 
 # Check AdGuard dashboard
 open http://192.168.1.101
+open https://adguard.internal   # after trusting the cert
 ```
 
 Verify queries appear in AdGuard's query log after visiting an ad-heavy site.
@@ -147,8 +235,9 @@ Configure in AdGuard dashboard (Settings > DNS settings):
 
 **Check:**
 - HTTP address in config: `192.168.1.101:80`
+- HTTPS address in config: `https://adguard.internal` (needs the cert trusted, see above)
 - LXC container is running in Proxmox
-- No firewall blocking port 80
+- No firewall blocking ports 80/443
 
 ### High latency
 

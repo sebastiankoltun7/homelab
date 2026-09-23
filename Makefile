@@ -1,6 +1,6 @@
 .PHONY: help setup clean all \
        tf-init tf-plan tf-apply tf-destroy \
-       ansible-install ansible-all ansible-adguard ansible-docker ansible-dry-run \
+       ansible-install ansible-all ansible-adguard ansible-docker ansible-plex ansible-pve ansible-pve-host ansible-dry-run \
        vault-create terraform-tfvars docker-context ssh-accept-keys ssh-cleanup
 
 ANSIBLE_DIR := ansible
@@ -58,6 +58,7 @@ ansible-install: ## Install Ansible collections
 ansible-all: ssh-accept-keys ## Run all playbooks
 	$(ANSIBLE_PLAYBOOK) playbooks/install_adguard.yml
 	$(ANSIBLE_PLAYBOOK) playbooks/install_docker.yml
+	$(ANSIBLE_PLAYBOOK) playbooks/install_plex.yml
 
 ansible-adguard: ssh-accept-keys ## Deploy AdGuard Home
 	$(ANSIBLE_PLAYBOOK) playbooks/install_adguard.yml
@@ -65,13 +66,25 @@ ansible-adguard: ssh-accept-keys ## Deploy AdGuard Home
 ansible-docker: ssh-accept-keys ## Deploy Docker host
 	$(ANSIBLE_PLAYBOOK) playbooks/install_docker.yml
 
+ansible-plex: ssh-accept-keys ## Deploy Plex Media Server
+	$(ANSIBLE_PLAYBOOK) playbooks/install_plex.yml
+
+ansible-pve: ## Mount external disks on the Proxmox host
+	$(ANSIBLE_PLAYBOOK) playbooks/setup_pve_storage.yml
+
+ansible-pve-host: ## Configure Proxmox host for the plex LXC (binds + GPU, root@pam)
+	$(ANSIBLE_PLAYBOOK) playbooks/setup_pve_host.yml
+
 ansible-dry-run: ## Dry-run all playbooks
+	$(ANSIBLE_PLAYBOOK) playbooks/setup_pve_storage.yml --check
+	$(ANSIBLE_PLAYBOOK) playbooks/setup_pve_host.yml --check
 	$(ANSIBLE_PLAYBOOK) playbooks/install_adguard.yml --check
 	$(ANSIBLE_PLAYBOOK) playbooks/install_docker.yml --check
+	$(ANSIBLE_PLAYBOOK) playbooks/install_plex.yml --check
 
 # ── Combined ───────────────────────────────────
 
-all: tf-init tf-apply ansible-install ssh-cleanup ansible-all ## Full deployment (Terraform + Ansible)
+all: ansible-install ssh-cleanup ansible-pve tf-init tf-apply ansible-pve-host ansible-all ## Full deployment (mount disks, Terraform + Ansible)
 
 # ── Utility ────────────────────────────────────
 

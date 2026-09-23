@@ -39,3 +39,7 @@ variable "ip" {
 variable "ssh_pub_key" {
   type = string
 }
+
+output "lxc_template_file_id" {
+  value = module.adguard_lxc.template_file_id
+}

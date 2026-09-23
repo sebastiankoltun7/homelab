@@ -1,0 +1,88 @@
+---
+# Per-disk tasks: resolve the device, mount it persistently and prepare
+# subdirectories. `item` is one entry of `external_disks`.
+
+- name: Record the disk being processed
+  ansible.builtin.set_fact:
+    current_disk: "{{ item }}"
+
+- name: Check disk is attached ({{ current_disk.name }})
+  ansible.builtin.stat:
+    path: "/dev/disk/by-id/{{ current_disk.by_id }}"
+  register: disk_path
+
+- name: Fail when a configured disk is missing
+  ansible.builtin.fail:
+    msg: |-
+      External disk '{{ current_disk.name }}' (by-id '{{ current_disk.by_id }}')
+      was not found on the Proxmox host.
+      Attach the drive, then re-run `make all`.
+      Currently connected disks:
+      {{ lookup('pipe', 'lsblk -dob NAME,TRAN,SERIAL,MODEL') }}
+  when: not disk_path.stat.exists
+
+- name: Read disk UUID and filesystem type ({{ current_disk.name }})
+  ansible.builtin.command: blkid -o export /dev/disk/by-id/{{ current_disk.by_id }}
+  register: disk_blkid
+  changed_when: false
+
+- name: Extract unnamed values ({{ current_disk.name }})
+  ansible.builtin.set_fact:
+    disk_uuid: "{{ disk_blkid.stdout_lines | select('search', '^UUID=') | first | split('=', 1) | last | regex_replace('\"', '') }}"
+
+- name: Extract filesystem type ({{ current_disk.name }})
+  ansible.builtin.set_fact:
+    disk_fstype_raw: "{{ disk_blkid.stdout_lines | select('search', '^TYPE=') | first | split('=', 1) | last | regex_replace('\"', '') }}"
+
+- name: Normalize mount filesystem type ({{ current_disk.name }})
+  ansible.builtin.set_fact:
+    disk_fstype: "{{ 'ntfs3' if disk_fstype_raw == 'ntfs' else disk_fstype_raw }}"
+
+- name: Warn about filesystems without Unix permissions ({{ current_disk.name }})
+  ansible.builtin.debug:
+    msg: |-
+      Filesystem '{{ disk_fstype }}' does not support Unix ownership.
+      Plex writes its config through the container bind mount and may not
+      be able to. Prefer ext4/xfs; if the drive must stay exfat/ntfs, set
+      uid=/gid= mount options in `external_disks[].opts`.
+  when: disk_fstype in ['ntfs3', 'exfat', 'vfat', 'fuseblk']
+
+- name: Ensure mount point directory exists ({{ current_disk.name }})
+  ansible.builtin.file:
+    path: "/mnt/pve/{{ current_disk.name }}"
+    state: directory
+    mode: "0755"
+
+- name: Mount disk persistently by UUID ({{ current_disk.name }})
+  ansible.posix.mount:
+    path: "/mnt/pve/{{ current_disk.name }}"
+    src: "UUID={{ disk_uuid }}"
+    fstype: "{{ disk_fstype }}"
+    opts: "{{ current_disk.opts | default('defaults') }}"
+    state: mounted
+
+- name: Assert required directories exist on disk
+  ansible.builtin.stat:
+    path: "/mnt/pve/{{ current_disk.name }}/{{ item }}"
+  loop: "{{ current_disk.assert_dirs | default([]) }}"
+  loop_control:
+    label: "{{ current_disk.name }}/{{ item }}"
+  register: required_dirs
+
+- name: Fail when a required directory is missing
+  ansible.builtin.fail:
+    msg: >-
+      Directory '/mnt/pve/{{ current_disk.name }}/{{ item.item }}' is missing
+      on drive '{{ current_disk.name }}'. Add it on the drive, then re-run
+      `make all`.
+  loop: "{{ required_dirs.results }}"
+  when: not item.stat.exists
+
+- name: Create missing directories on disk
+  ansible.builtin.file:
+    path: "/mnt/pve/{{ current_disk.name }}/{{ item }}"
+    state: directory
+    mode: "{{ current_disk.dir_mode | default('0755') }}"
+  loop: "{{ current_disk.create_dirs | default([]) }}"
+  loop_control:
+    label: "{{ current_disk.name }}/{{ item }}"

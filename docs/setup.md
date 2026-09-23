@@ -147,8 +147,8 @@ Edit `terraform/terraform.tfvars`:
 proxmox = {
   ip                    = "192.168.1.100"    # Proxmox host IP
   port                  = "8006"             # Proxmox API port
-  username              = "terraform@pve!terraform-token"  # API token format
-  api_token             = "terraform@pam!token_id=xxxxxxxx" # Token value
+  username              = "tf-infra@pve!tf"          # dedicated, least-privilege API user
+  api_token             = "tf-infra@pve!tf=xxxxxxxx" # Token secret value
   root_ssh_key_location = "~/.ssh/id_ed25519" # SSH private key path
   insecure              = true               # Skip TLS verification (default: true)
   ssh_username          = "root"             # SSH username for Proxmox (default: "root")
@@ -158,13 +158,29 @@ vm_ssh_pub_key    = "ssh-ed25519 AAAA..."     # Public key for VMs
 admin_username    = "your-username"            # Admin user for all services
 ```
 
+> **API user:** use a dedicated least-privilege user, **never** `root@pam`. Create it on the Proxmox
+> host (token must be `--privsep 0` so it inherits the user's ACLs):
+>
+> ```bash
+> pveum user add tf-infra@pve --enable 1
+> pveum aclmod / -user tf-infra@pve -role PVEAuditor
+> for v in 101 102 103; do pveum aclmod /vms/$v -user tf-infra@pve -role PVEVMAdmin; done
+> pveum aclmod /storage/local -user tf-infra@pve -role PVEDatastoreUser
+> pveum aclmod /storage/local-lvm -user tf-infra@pve -role PVEDatastoreUser
+> pveum user token add tf-infra@pve tf --privsep 0
+> ```
+>
+> Bind mounts and device passthrough on LXC can only be applied by `root@pam` itself
+> (no API token, not even a root one); those are handled out-of-band by the
+> `ansible-pve-host` playbook over SSH.
+
 **Fields explained:**
 
 | Field | Description |
 |-------|-------------|
 | `proxmox.ip` | Proxmox host IP address |
 | `proxmox.port` | Proxmox web UI port (default: 8006) |
-| `proxmox.username` | API token in format `user@realm!token-id` |
+| `proxmox.username` | API token in format `user@realm!token-id` (dedicated low-priv user; not `root@pam`)
 | `proxmox.api_token` | Token secret from Proxmox UI |
 | `proxmox.root_ssh_key_location` | Path to SSH private key for Proxmox/VM access |
 | `proxmox.insecure` | Skip TLS verification (default: true) |
@@ -198,6 +214,28 @@ htpasswd -bnBC 10 "" 'yourpassword' | tr -d ':\n' | sed 's/$2y/$2a/'
 
 **Note:** `admin_username` must match the value in `terraform.tfvars`.
 
+### 4. Configure External USB Disks
+
+Edit `ansible/group_vars/pve.yml` and point `external_disks[].by_id` at the drive to mount. Find the stable by-id name on the Proxmox host:
+
+```bash
+ssh root@192.168.1.100 "ls -l /dev/disk/by-id/ | grep -i usb"
+```
+
+Example:
+
+```yaml
+external_disks:
+  - name: ssd-backup
+    by_id: "usb-Samsung_PSSD_T7_S4XXNXXX-0:0"
+    opts: "defaults"
+    dir_mode: "0777"
+    assert_dirs: [PlexMedia]
+    create_dirs: [PlexConfig]
+```
+
+`make all` detects the drive's UUID/filesystem automatically and mounts it persistently (fstab by UUID) at `/mnt/pve/<name>` before Terraform creates the containers. `assert_dirs` must already exist on the drive (media), `create_dirs` is created if missing (used for the Plex config bind mount).
+
 ## First Deployment
 
 ### 1. Preview Changes
@@ -212,6 +250,16 @@ make tf-plan        # Preview infrastructure changes
 make all            # Full deployment (Terraform + Ansible)
 ```
 
+If this is a fresh deployment you need to do two one-time state steps first (local only, no infra changes):
+
+```bash
+# 1. Shift the shared OS template resource address (module was extended with `count`)
+terraform state mv 'module.adguard_home.module.adguard_lxc.proxmox_virtual_environment_file.debian_template' 'module.adguard_home.module.adguard_lxc.proxmox_virtual_environment_file.debian_template[0]'
+
+# 2. (optional) Preview that Terraform only ADDS the new plex container
+make tf-plan
+```
+
 Or step by step:
 
 ```bash
@@ -223,13 +271,22 @@ make ansible-all    # Configure services
 
 ### 3. What Happens
 
-1. **Terraform** creates:
+1. **Ansible (`ansible-pve`)** mounts each drive in `external_disks` at `/mnt/pve/<name>`
+2. **Terraform** creates:
    - AdGuard LXC container (Debian 13) at `192.168.1.101`
    - Docker VM (Ubuntu 24.04) at `192.168.1.102`
-
-2. **Ansible** configures:
+   - Plex LXC container (Debian 13) at `192.168.1.103` with `/PlexMedia` + `/plex-config` bind mounts and `/dev/dri` GPU passthrough
+3. **Ansible** configures:
    - AdGuard Home DNS server with ad blocking
    - Docker engine with `proxy-net` bridge network
+   - Plex Media Server (config stored on the USB SSD)
+
+### 4. First-time Plex setup
+
+After the first `make all`, claim the server once from a browser:
+
+1. Open `http://192.168.1.103:32400/web` and sign in
+2. Add libraries pointing at `/PlexMedia` (Movies / Shows)
 
 ## Verification
 
@@ -259,6 +316,19 @@ nslookup google.com 192.168.1.101
 nslookup adguard.internal 192.168.1.101
 ```
 
+### Check Plex
+
+```bash
+# Verify container mounts (binds + USB)
+ssh root@192.168.1.103 "findmnt /PlexMedia /plex-config && ls /dev/dri"
+
+# Open web UI
+open http://192.168.1.103:32400/web
+
+# Via AdGuard DNS
+open http://plex.internal:32400/web
+```
+
 ### Check Docker Context
 
 ```bash
@@ -274,6 +344,7 @@ docker ps
 1. **Configure client DNS** — See [Local Network Setup](network-setup.md)
 2. **Deploy apps** — Add docker-compose files to `apps/docker/`
 3. **Add DNS rewrites** — Edit `ansible/group_vars/role_adguard.yml`
+4. **Retire the old Plex container (192.168.1.150)** — once 103 is verified, destroy the manually-created LXC 100 (`pct destroy 100`) and reclaim the orphaned `vm-100-disk-1` volume. It is not managed by Terraform.
 
 ## Troubleshooting
 

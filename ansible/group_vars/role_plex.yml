@@ -1,0 +1,14 @@
+# Plex Media Server
+plex_media_mount: "/PlexMedia"
+plex_config_mount: "/plex-config"
+
+# Plex data dir is configured via a systemd drop-in: the plexmediaserver unit
+# sets PLEX_MEDIA_SERVER_APPLICATION_SUPPORT_DIR itself and ignores
+# /etc/default/plexmediaserver.
+plex_override_dir: "/etc/systemd/system/plexmediaserver.service.d"
+plex_override_file: "/etc/systemd/system/plexmediaserver.service.d/override.conf"
+
+# Plex signs the repo with an SHA-1 key rejected by Debian 13 secure apt,
+# so it is marked trusted (the repo is served over HTTPS).
+plex_apt_repo_file: "/etc/apt/sources.list.d/plexmediaserver.list"
+plex_apt_repo: "deb [trusted=yes] https://downloads.plex.tv/repo/deb public main"

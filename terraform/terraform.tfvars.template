@@ -1,8 +1,14 @@
 proxmox = {
   ip                    = "192.168.1.100"
   port                  = "8006"
-  username              = "terraform@pve!terraform-token"
-  api_token             = "terraform@pam!terraform_token=XXXXXXXXXXXXXXXXXXXX"
+  # Dedicated least-privilege API user (not root@pam). Create with:
+  #   pveum user add tf-infra@pve --enable 1
+  #   pveum aclmod / -user tf-infra@pve -role PVEAuditor
+  #   pveum aclmod /vms/<id> -user tf-infra@pve -role PVEVMAdmin   # per managed VM/LXC
+  #   pveum aclmod /storage/<name> -user tf-infra@pve -role PVEDatastoreUser
+  #   pveum user token add tf-infra@pve tf --privsep 0
+  username              = "tf-infra@pve!tf"
+  api_token             = "tf-infra@pve!tf=XXXXXXXXXXXXXXXXXXXX"
   root_ssh_key_location = "~/.ssh/id_ed25519"
   insecure              = true
   ssh_username          = "root"

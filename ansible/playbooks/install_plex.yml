@@ -1,0 +1,63 @@
+---
+- name: Plex Media Server installation
+  hosts: role_plex
+  gather_facts: false
+
+  tasks:
+    - name: Verify external mounts are present
+      ansible.builtin.command: findmnt -n {{ item }}
+      loop:
+        - "{{ plex_media_mount }}"
+        - "{{ plex_config_mount }}"
+      changed_when: false
+      failed_when: mount_check.rc != 0
+      register: mount_check
+
+    - name: Add Plex apt repository
+      ansible.builtin.copy:
+        content: "{{ plex_apt_repo }}\n"
+        dest: "{{ plex_apt_repo_file }}"
+        mode: "0644"
+
+    - name: Install dependencies
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Install Plex Media Server
+      ansible.builtin.apt:
+        name: plexmediaserver
+        state: present
+        update_cache: true
+
+    - name: Ensure systemd override directory exists
+      ansible.builtin.file:
+        path: "{{ plex_override_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Configure Plex data directory on external disk
+      ansible.builtin.copy:
+        content: |
+          [Service]
+          Environment="PLEX_MEDIA_SERVER_APPLICATION_SUPPORT_DIR=/plex-config"
+        dest: "{{ plex_override_file }}"
+        mode: "0644"
+      notify: Reload and restart Plex Media Server
+
+    - name: Enable and start Plex Media Server
+      ansible.builtin.systemd:
+        name: plexmediaserver
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Reload and restart Plex Media Server
+      ansible.builtin.systemd:
+        name: plexmediaserver
+        state: restarted
+        daemon_reload: true

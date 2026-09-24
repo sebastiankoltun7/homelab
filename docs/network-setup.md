@@ -31,15 +31,17 @@ Set your router's DNS server to `192.168.1.101`. The router distributes this DNS
 
 **Cons:** Some routers don't support custom DNS; some IoT devices use hardcoded DNS and bypass router settings.
 
-### Option 2: DHCP with AdGuard (Recommended)
+### Option 2: DHCP via AdGuard (Recommended)
 
 1. Disable DHCP on your router
-2. Set router's DHCP to point to AdGuard (`192.168.1.101`)
-3. AdGuard advertises itself as DNS via DHCP option 6
+2. Enable DHCP in AdGuard Home (Settings > DHCP settings) on `192.168.1.101` — configure gateway `192.168.1.1`, subnet `192.168.1.0/24`, range outside static IPs (e.g., `.110-.250`), and DNS `192.168.1.101` (DHCP option 6)
+3. AdGuard advertises itself as DNS via DHCP; clients get AdGuard as their DNS automatically
 
-**Pros:** Full control over DNS, all devices covered.
+Alternatively, keep DHCP on the router but set its DNS/DHCP option 6 to `192.168.1.101` if your router supports it (functionally Option 1).
 
-**Cons:** Requires router admin access; if homelab goes down, you don't have web access.
+**Pros:** Full control over DNS, all devices covered, no per-client config.
+
+**Cons:** Requires router admin access; if AdGuard/LXC is down, DHCP/DNS are down — keep Option 1 or 3 as fallback.
 
 ### Option 3: Manual Client Configuration
 
@@ -98,7 +100,7 @@ sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
 
 AdGuard Home serves its admin dashboard over `https://adguard.internal`. Because the certificate is self-signed (no public CA), browsers will warn "Your connection is not private" until you install it as a trusted certificate.
 
-The Ansible playbook generates the certificate and fetches a copy to `ansible/playbooks/files/cert.crt`. Install/trust that file on any machine that should open the dashboard over HTTPS without warnings:
+The Ansible playbook (`ansible/playbooks/install_adguard.yml:52`) generates the certificate and fetches a copy to `ansible/playbooks/files/cert.crt` (gitignored via `.gitignore:35`). Install/trust that file on any machine that should open the dashboard over HTTPS without warnings:
 
 ```bash
 # Verify the cert and its name

@@ -24,7 +24,7 @@ services:
     command: server /data --console-address ":9001"
     deploy:
       replicas: 1
-      labels: ["miniio"]
+       labels: ["minio"]
       resources:
         limits:
           memory: 512M

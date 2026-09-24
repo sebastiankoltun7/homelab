@@ -5,9 +5,11 @@
 
 ANSIBLE_DIR := ansible
 TERRAFORM_DIR := terraform
-DOCKER_USER := skoltun
+DOCKER_USER ?= skoltun
 DOCKER_HOST_IP := 192.168.1.102
+PROXMOX_HOST_IP := 192.168.1.100
 ANSIBLE_PLAYBOOK = cd $(ANSIBLE_DIR) && ansible-playbook
+ANSIBLE_GALAXY = cd $(ANSIBLE_DIR) && ansible-galaxy
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -26,7 +28,8 @@ setup: setup-venv ansible-install vault-create terraform-tfvars ## Full local se
 setup-venv: ## Create venv and install dependencies
 	@cd $(ANSIBLE_DIR) && python3 -m venv .venv
 	@cd $(ANSIBLE_DIR) && .venv/bin/pip install --upgrade pip -q
-	@cd $(ANSIBLE_DIR) && .venv/bin/pip install paramiko proxmoxer requests -q
+	@cd $(ANSIBLE_DIR) && .venv/bin/pip install ansible-core paramiko proxmoxer requests -q
+	@echo "Activate with: source ansible/.venv/bin/activate"
 
 vault-create: ## Create vault.yml from template (skip if exists)
 	@test -f $(ANSIBLE_DIR)/group_vars/all/vault.yml && echo "vault.yml exists, skipping." || \
@@ -53,7 +56,11 @@ tf-destroy: ## Destroy all infrastructure
 # ── Ansible ────────────────────────────────────
 
 ansible-install: ## Install Ansible collections
-	@cd $(ANSIBLE_DIR) && ansible-galaxy install -r requirements.yml --force
+	@if [ -x $(ANSIBLE_DIR)/.venv/bin/ansible-galaxy ]; then \
+		$(ANSIBLE_DIR)/.venv/bin/ansible-galaxy install -r $(ANSIBLE_DIR)/requirements.yml --force; \
+	else \
+		$(ANSIBLE_GALAXY) install -r requirements.yml --force; \
+	fi
 
 ansible-all: ssh-accept-keys ## Run all playbooks
 	$(ANSIBLE_PLAYBOOK) playbooks/install_adguard.yml
@@ -90,9 +97,11 @@ all: ansible-install ssh-cleanup ansible-pve tf-init tf-apply ansible-pve-host a
 
 ssh-cleanup: ## Remove stale SSH host keys for homelab hosts
 	@ssh-keygen -R $(DOCKER_HOST_IP) 2>/dev/null || true
+	@ssh-keygen -R $(PROXMOX_HOST_IP) 2>/dev/null || true
 
 ssh-accept-keys: ## Accept SSH host keys
 	@ssh-keyscan -H $(DOCKER_HOST_IP) >> ~/.ssh/known_hosts 2>/dev/null || true
+	@ssh-keyscan -H $(PROXMOX_HOST_IP) >> ~/.ssh/known_hosts 2>/dev/null || true
 
 docker-context: ssh-accept-keys ## Setup remote Docker context
 	@docker context create homelab --docker "host=ssh://$(DOCKER_USER)@$(DOCKER_HOST_IP)"

@@ -3,7 +3,7 @@ module "docker_vm" {
   source  = "../proxmox_vm"
   id      = var.id
   vm_name = var.name
-  vm_tags = concat(["managment-plane"], var.tags)
+   vm_tags = concat(["management-plane"], var.tags)
 
   # OS Image
   distro_image_url = "https://cloud-images.ubuntu.com/minimal/releases/noble/release/ubuntu-24.04-minimal-cloudimg-amd64.img"

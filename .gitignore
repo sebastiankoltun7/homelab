@@ -3,7 +3,7 @@
 *.tfstate*
 *.tfstate.backup
 *.tfvars
-.terraform.lock.hcl
+# .terraform.lock.hcl is committed (pin bpg/proxmox 0.108.0)
 
 # --- Ansible & Python ---
 venv/
@@ -23,6 +23,7 @@ vault.yml
 proxmox_creds.yml
 group_vars/all/vault.yml
 .env
+!.env.template
 
 # --- OS & IDE ---
 .DS_Store

@@ -18,7 +18,7 @@ docker_daemon_options:
     max-file: "3"
 
 # Docker Cleanup Settings
-# Sunday at 3am
+# Sunday at 01:00
 docker_cleanup_cron_minute: "0"
 docker_cleanup_cron_hour: "1"
 docker_cleanup_cron_weekday: "0"

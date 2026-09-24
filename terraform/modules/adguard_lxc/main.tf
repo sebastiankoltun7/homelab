@@ -2,7 +2,7 @@ module "adguard_lxc" {
   source   = "../proxmox_lxc"
   id       = var.id
   lxc_name = var.name
-  tags     = concat(["managment-plane"], var.tags)
+  tags     = concat(["management-plane"], var.tags)
 
   # Network
   ip_address = var.ip

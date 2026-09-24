@@ -11,6 +11,7 @@ module "docker_vm" {
   # Network
   vm_ip         = var.ip
   vm_ip_gateway = "192.168.1.1"
+  enable_firewall = true
 
   # Resources
   vm_cpus             = 2
@@ -37,6 +38,67 @@ module "docker_vm" {
   # Admin Access
   vm_admin_username    = var.vm_admin_username
   vm_admin_ssh_pub_key = var.ssh_pub_key
+}
+
+module "docker_firewall" {
+  source    = "../proxmox_firewall"
+  vm_id     = var.id
+  node_name = "pve"
+
+  # Inbound traffic entering the Docker VM
+  inbound_rules = [
+    {
+      port    = "22"
+      source  = "192.168.1.0/24"
+      comment = "Allow SSH from local network"
+    },
+    {
+      port    = "80"
+      proto   = "tcp"
+      comment = "Allow HTTP inbound for Nginx proxy"
+    },
+    {
+      port    = "443"
+      proto   = "tcp"
+      comment = "Allow HTTPS inbound for Nginx proxy and TLS"
+    }
+  ]
+
+  # Outbound traffic leaving the Docker VM
+  outbound_rules = [
+    # ALLOW: DNS queries to your AdGuard container
+    {
+      port    = "53"
+      proto   = "udp"
+      dest    = "192.168.1.101"
+      comment = "Allow DNS queries to AdGuard"
+    },
+    {
+      port    = "53"
+      proto   = "tcp"
+      dest    = "192.168.1.101"
+      comment = "Allow DNS queries to AdGuard (TCP)"
+    },
+    # DROP local network access
+    {
+      dest    = "192.168.0.0/16"
+      action  = "DROP"
+      comment = "Block local subnet"
+      log     = "info"
+    },
+    {
+      dest    = "10.0.0.0/8"
+      action  = "DROP"
+      comment = "Block private Class A networks"
+      log     = "info"
+    },
+    {
+      dest    = "172.16.0.0/12"
+      action  = "DROP"
+      comment = "Block private Class B networks"
+      log     = "info"
+    }
+  ]
 }
 
 //Overrides

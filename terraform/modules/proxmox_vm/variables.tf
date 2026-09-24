@@ -118,3 +118,9 @@ variable "vm_admin_ssh_pub_key" {
     error_message = "The SSH key must start with 'ssh-'."
   }
 }
+
+variable "enable_firewall" {
+  type = bool
+  description = "Enables firewall"
+  default = false
+}

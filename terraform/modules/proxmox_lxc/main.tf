@@ -67,7 +67,7 @@ resource "proxmox_virtual_environment_container" "lxc_container" {
   network_interface {
     name     = "eth0"
     bridge   = "vmbr0"
-    firewall = var.network_firewall
+    firewall = var.enable_firewall
   }
 
   dynamic "startup" {
@@ -80,14 +80,6 @@ resource "proxmox_virtual_environment_container" "lxc_container" {
   disk {
     datastore_id = var.disk_datastore_id
     size         = var.disk_size
-  }
-
-  dynamic "mount_point" {
-    for_each = var.apply_mount_points ? var.mount_points : []
-    content {
-      volume = mount_point.value.volume
-      path   = mount_point.value.path
-    }
   }
 
   # Bind mounts and device passthrough can only be applied by user root@pam

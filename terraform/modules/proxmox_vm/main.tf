@@ -51,6 +51,7 @@ resource "proxmox_virtual_environment_vm" "vm_node" {
 
   network_device {
     bridge = "vmbr0"
+    firewall = var.enable_firewall
   }
 
   initialization {

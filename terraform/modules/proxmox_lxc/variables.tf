@@ -71,7 +71,7 @@ variable "os_template_type" {
   type = string
 }
 
-variable "network_firewall" {
+variable "enable_firewall" {
   type        = bool
   default     = false
   description = "Enable firewall rules on the container network interface"
@@ -81,21 +81,6 @@ variable "startup_order" {
   type        = number
   default     = null
   description = "Startup order of the container (null disables the startup block)"
-}
-
-variable "mount_points" {
-  type = list(object({
-    volume = string
-    path   = string
-  }))
-  default     = []
-  description = "LXC bind mount points (optional; applied by Terraform when apply_mount_points is true)"
-}
-
-variable "apply_mount_points" {
-  type        = bool
-  default     = true
-  description = "When false, bind mounts are configured out-of-band (root@pam only via `pct`)"
 }
 
 variable "device_passthrough" {

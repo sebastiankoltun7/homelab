@@ -26,3 +26,31 @@ module "plex" {
   ssh_pub_key      = var.vm_ssh_pub_key
   template_file_id = module.adguard_home.lxc_template_file_id
 }
+# Enable firewall
+resource "proxmox_virtual_environment_cluster_firewall" "this" {
+  enabled = true
+}
+
+# For LXC Containers (AdGuard & Plex)
+resource "proxmox_virtual_environment_firewall_options" "container_options" {
+  for_each = toset(["102", "103"])
+
+  node_name    = "pve"
+  container_id = tonumber(each.key)
+
+  enabled       = true
+  log_level_in  = "info"
+  log_level_out = "info"
+}
+
+# For VMs (Docker)
+resource "proxmox_virtual_environment_firewall_options" "vm_options" {
+  for_each = toset(["101"])
+
+  node_name = "pve"
+  vm_id     = tonumber(each.key)
+
+  enabled       = true
+  log_level_in  = "info"
+  log_level_out = "info"
+}

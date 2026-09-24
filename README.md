@@ -1,4 +1,9 @@
 # Homelab
+<p align="left">
+  <img src="https://img.shields.io/badge/Gitleaks-Protected-brightgreen?style=flat-square&logo=git" alt="Gitleaks" />
+  <img src="https://img.shields.io/badge/Trivy-Scanned-blue?style=flat-square&logo=security" alt="Trivy" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License" />
+</p>
 
 ![Dell OptiPlex Homelab](docs/images/dell_optiplex.png)
 

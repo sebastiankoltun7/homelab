@@ -26,6 +26,17 @@ module "plex" {
   ssh_pub_key      = var.vm_ssh_pub_key
   template_file_id = module.adguard_home.lxc_template_file_id
 }
+
+module "k3s" {
+  source            = "./modules/k3s_vm"
+  id                = 104
+  name              = "k3s"
+  tags              = ["role-k3s"]
+  ip                = "192.168.1.104"
+  vm_admin_username = var.admin_username
+  ssh_pub_key       = var.vm_ssh_pub_key
+}
+
 # Enable firewall
 resource "proxmox_virtual_environment_cluster_firewall" "this" {
   enabled = true

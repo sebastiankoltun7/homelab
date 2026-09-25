@@ -1,0 +1,39 @@
+- name: Install and Configure K3s Cluster
+  hosts: role_k3s
+  become: true
+
+  tasks:
+    - name: Check if K3s is already installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/k3s
+      register: k3s_binary
+
+    - name: Install K3s server (Control Plane)
+      when: not k3s_binary.stat.exists
+      ansible.builtin.shell: |
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --node-ip=192.168.1.104 --write-kubeconfig-mode 644" sh -
+      args:
+        executable: /bin/bash
+
+    - name: Ensure K3s service is started and enabled
+      ansible.builtin.systemd:
+        name: k3s
+        state: started
+        enabled: true
+
+    - name: Ensure kubeconfig is readable by the user
+      ansible.builtin.file:
+        path: /etc/rancher/k3s/k3s.yaml
+        mode: '0644'
+      become: true
+
+    - name: Wait for K3s kubeconfig to appear
+      ansible.builtin.wait_for:
+        path: /etc/rancher/k3s/k3s.yaml
+        timeout: 30
+
+    - name: Fetch kubeconfig to local playbook directory
+      ansible.builtin.fetch:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: "{{ playbook_dir }}/files/k3s.yaml"
+        flat: true

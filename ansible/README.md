@@ -84,14 +84,14 @@ The AdGuard LXC is not SSHed directly; Ansible tunnels via Proxmox.
 
 ## AdGuard Home TLS
 
-AdGuard Home runs with TLS enabled (`https://adguard.internal`, `AdGuardHome.yml.j2:4`). The first run of `playbooks/install_adguard.yml:52`:
+AdGuard Home runs with TLS enabled (`https://adguard.internal`, `adguard/AdGuardHome.yml.j2:4`). The first run of `playbooks/install_adguard.yml:52`:
 
-1. Generates a self-signed certificate (RSA 2048, 825 days) with SAN `DNS:adguard.internal, IP:192.168.1.101` at `/opt/AdGuardHome/certs/` on the container.
+1. Renders `playbooks/adguard/openssl.cnf.j2` to `/opt/AdGuardHome/certs/openssl.cnf` and generates a self-signed certificate (RSA 2048, 825 days) at `/opt/AdGuardHome/certs/` on the container. SANs are templated from `group_vars/role_adguard.yml:9` (`adguard_alt_names`: `*.docker.internal`, `docker.internal`, `*.internal`, `internal`, `*.k8s.internal`, etc. + `adguard_alt_ips`: `192.168.1.101`), with CN `{{ adguard_tls_server_name }}` (`adguard.internal`).
 2. Fetches a copy to `playbooks/files/cert.crt` on your machine so you can trust it locally (the directory is gitignored via `../.gitignore:35`).
 
-The dashboard stays reachable over plain HTTP too (`force_https: false`), so the cert only matters for HTTPS. Because the cert also carries the IP SAN, `https://192.168.1.101` works without warnings once the cert is trusted.
+The dashboard stays reachable over plain HTTP too (`force_https: false`), so the cert only matters for HTTPS. Because the cert also carries the IP SAN, `https://192.168.1.101` and any `*.docker.internal` host work without warnings once the cert is trusted.
 
-The certificate name and location are set via `adguard_tls_server_name` and `adguard_cert_directory` in `group_vars/role_adguard.yml:5`.
+The certificate name and location are set via `adguard_tls_server_name` and `adguard_cert_directory` in `group_vars/role_adguard.yml:5`; SANs via `adguard_alt_names` / `adguard_alt_ips` (`group_vars/role_adguard.yml:9`).
 
 To **regenerate** the certificate, set `adguard_regenerate_cert: true` (extra vars or group_vars) and re-run the playbook:
 

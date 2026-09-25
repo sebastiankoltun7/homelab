@@ -333,8 +333,9 @@ open http://192.168.1.101
 # Test DNS resolution
 nslookup google.com 192.168.1.101
 
-# Test internal DNS ( rewrites in ansible/group_vars/role_adguard.yml:9 )
+# Test internal DNS (rewrites in ansible/group_vars/role_adguard.yml:20)
 nslookup adguard.internal 192.168.1.101
+nslookup minio.docker.internal 192.168.1.101  # docker apps use *.docker.internal wildcard
 ```
 
 ### Check Plex
@@ -365,8 +366,8 @@ Override user if needed: `make docker-context DOCKER_USER=myuser`.
 ## Next Steps
 
 1. **Configure client DNS** — See [Local Network Setup](network-setup.md)
-2. **Deploy apps** — See [Apps](../apps/README.md); add docker-compose files to `apps/docker/` (e.g., `nginx`, `mini_io`)
-3. **Add DNS rewrites** — Edit `ansible/group_vars/role_adguard.yml:9`
+2. **Deploy apps** — See [Apps](../apps/README.md); add docker-compose files to `apps/docker/` (e.g., `nginx`, `mini_io`) — docker apps use `*.docker.internal` (`DOMAIN=docker.internal`, wildcard `*.docker.internal → 192.168.1.102` in `ansible/group_vars/role_adguard.yml:20`)
+3. **Add DNS rewrites** — Edit `ansible/group_vars/role_adguard.yml:20` (infrastructure hosts `adguard.internal`/`plex.internal` are explicit; docker apps are covered by the `*.docker.internal` wildcard)
 4. **Retire the old Plex container (192.168.1.150)** — once 103 is verified, destroy the manually-created LXC 100 (`pct destroy 100`) and reclaim the orphaned `vm-100-disk-1` volume. It is not managed by Terraform.
 
 ## Troubleshooting

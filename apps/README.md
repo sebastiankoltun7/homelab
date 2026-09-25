@@ -43,16 +43,17 @@ docker --context homelab compose -f apps/docker/mini_io/docker-compose.yml up -d
 Env (`apps/docker/mini_io/.env.template:1`):
 
 ```
+DOMAIN=docker.internal
 MINIO_USER=admin
 MINIO_PASS=changeme
 ```
 
-Routing via `VIRTUAL_HOST_MULTIPORTS` (requires `nginx-proxy` + DNS rewrites):
+Routing via `VIRTUAL_HOST_MULTIPORTS` (requires `nginx-proxy` + DNS rewrites, templated with `${DOMAIN}` in `apps/docker/mini_io/docker-compose.yml:14`):
 
-- `minio.internal` → `:9001` (console)
-- `s3.minio.internal` → `:9000` (S3 API)
+- `minio.docker.internal` → `:9001` (console)
+- `s3.minio.docker.internal` → `:9000` (S3 API)
 
-Add DNS rewrites in `ansible/group_vars/role_adguard.yml:9` (`*.internal → 192.168.1.102`) so `minio.internal` resolves.
+DNS wildcard `*.docker.internal → 192.168.1.102` is already configured in `ansible/group_vars/role_adguard.yml:20`, so `minio.docker.internal` resolves without extra rewrites.
 
 ## Adding a New App
 
@@ -67,10 +68,10 @@ services:
   myapp:
     networks: [proxy-net]
     environment:
-      VIRTUAL_HOST: myapp.internal
+      VIRTUAL_HOST: myapp.docker.internal
 ```
 
-3. Add DNS rewrite for `myapp.internal` in `ansible/group_vars/role_adguard.yml` and re-run `make ansible-adguard`.
+3. Add DNS rewrite for `myapp.docker.internal` in `ansible/group_vars/role_adguard.yml:20` if outside the `*.docker.internal` wildcard (the wildcard already covers any `*.docker.internal → 192.168.1.102`), then re-run `make ansible-adguard`.
 4. Deploy via `docker --context homelab compose up -d`.
 
 ## Secrets

@@ -14,8 +14,8 @@ module "k3s_vm" {
 
   # Resources
   vm_cpus             = 4
-  vm_memory_dedicated = 4096
-  vm_memory_floating  = 2048
+  vm_memory_dedicated = 12288
+  vm_memory_floating  = 6144
 
   vm_disks = [
     {
@@ -26,7 +26,7 @@ module "k3s_vm" {
       serial       = "OS-BOOT"
     },
     {
-      size         = 30
+      size         = 60
       datastore_id = "local-lvm"
       interface    = "virtio1"
       is_boot_disk = false

@@ -11,10 +11,10 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_PASS}
       GOMEMLIMIT: 400MiB
       VIRTUAL_HOST_MULTIPORTS: |-
-        minio.internal:
+        minio.${DOMAIN}:
           "/":
             port: 9001
-        s3.minio.internal:
+        s3.minio.${DOMAIN}:
           "/":
             port: 9000
     volumes:
@@ -24,7 +24,7 @@ services:
     command: server /data --console-address ":9001"
     deploy:
       replicas: 1
-       labels: ["minio"]
+      labels: ["minio"]
       resources:
         limits:
           memory: 512M

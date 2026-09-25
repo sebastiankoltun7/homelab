@@ -6,6 +6,17 @@ adguard_tls_server_name: "adguard.internal"
 adguard_cert_directory: /opt/AdGuardHome/certs
 adguard_dns_ipv6: true
 adguard_admin_username: "{{ admin_username }}"
+adguard_alt_names:
+  - "*.docker.internal"
+  - "docker.internal"
+  - "*.internal"
+  - "internal"
+  - "*.k8s.internal"
+  - "k8s.internal"
+  - "*.k3s.internal"
+  - "k3s.internal"
+adguard_alt_ips:
+  - "{{ adguard_http_address.split(':')[0] }}"
 adguard_dns_rewrites:
   - domain: "adguard.internal"
     answer: "{{ adguard_http_address.split(':')[0] }}"
@@ -13,6 +24,6 @@ adguard_dns_rewrites:
   - domain: "plex.internal"
     answer: "192.168.1.103"
     enabled: true
-  - domain: "*.internal"
+  - domain: "*.docker.internal"
     answer: "{{ adguard_docker_reverse_proxy_ip }}"
     enabled: true

@@ -1,0 +1,23 @@
+[req]
+default_bits       = 2048
+distinguished_name = req_distinguished_name
+req_extensions     = req_ext
+x509_extensions    = v3_req
+prompt             = no
+
+[req_distinguished_name]
+CN = {{ adguard_tls_server_name }}
+
+[req_ext]
+subjectAltName = @alt_names
+
+[v3_req]
+subjectAltName = @alt_names
+
+[alt_names]
+{% for domain in adguard_alt_names %}
+DNS.{{ loop.index }} = {{ domain }}
+{% endfor %}
+{% for ip in adguard_alt_ips %}
+IP.{{ loop.index }} = {{ ip }}
+{% endfor %}

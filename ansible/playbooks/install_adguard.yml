@@ -49,14 +49,19 @@
         - "{{ adguard_cert_directory }}/private.key"
       when: adguard_regenerate_cert | default(false)
 
-    - name: Generate self-signed TLS certificate with SANs
+    - name: Create OpenSSL configuration file from template
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/adguard/openssl.cnf.j2"
+        dest: "{{ adguard_cert_directory }}/openssl.cnf"
+        mode: '0644'
+
+    - name: Generate self-signed TLS certificate using config file
       ansible.builtin.command:
         cmd: >
           openssl req -x509 -nodes -days 825 -newkey rsa:2048
           -keyout {{ adguard_cert_directory }}/private.key
           -out {{ adguard_cert_directory }}/cert.crt
-          -subj "/CN={{ adguard_tls_server_name }}"
-          -addext "subjectAltName=DNS:{{ adguard_tls_server_name }},IP:{{ adguard_http_address.split(':')[0] }}"
+          -config {{ adguard_cert_directory }}/openssl.cnf
         creates: "{{ adguard_cert_directory }}/cert.crt"
 
     - name: Harden private key permissions
@@ -82,7 +87,7 @@
 
     - name: Deploy AdGuardHome.yaml
       ansible.builtin.template:
-        src: "{{ playbook_dir }}/config/AdGuardHome.yml.j2"
+        src: "{{ playbook_dir }}/adguard/AdGuardHome.yml.j2"
         dest: /opt/AdGuardHome/AdGuardHome.yaml
         mode: '0644'
       notify: Restart AdGuard Home

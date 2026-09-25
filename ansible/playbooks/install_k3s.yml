@@ -1,17 +1,59 @@
+---
 - name: Install and Configure K3s Cluster
   hosts: role_k3s
   become: true
 
   tasks:
+    - name: Ensure required kernel modules are loaded
+      ansible.builtin.modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - br_netfilter
+        - overlay
+
+    - name: Configure sysctl for Kubernetes networking
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_set: true
+        state: present
+        reload: true
+      loop:
+        - { key: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+        - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+        - { key: 'net.ipv4.ip_forward', value: '1' }
+
+    # --- NEW: STORAGE SETUP FOR 60GB SECONDARY DISK ---
+    - name: Create filesystem on secondary disk if not present
+      ansible.builtin.filesystem:
+        fstype: ext4
+        dev: /dev/vdb
+
+    - name: Ensure mount directory exists
+      ansible.builtin.file:
+        path: /mnt/k3s-data
+        state: directory
+        mode: '0755'
+
+    - name: Mount secondary disk to /mnt/k3s-data
+      ansible.builtin.mount:
+        path: /mnt/k3s-data
+        src: /dev/vdb
+        fstype: ext4
+        opts: defaults
+        state: mounted
+    # --------------------------------------------------
+
     - name: Check if K3s is already installed
       ansible.builtin.stat:
         path: /usr/local/bin/k3s
       register: k3s_binary
 
-    - name: Install K3s server (Control Plane)
+    - name: Install K3s server (Control Plane with Dedicated Data Disk)
       when: not k3s_binary.stat.exists
       ansible.builtin.shell: |
-        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --node-ip=192.168.1.104 --write-kubeconfig-mode 644" sh -
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --node-ip={{ ansible_host }} --data-dir=/mnt/k3s-data --write-kubeconfig-mode 644" sh -
       args:
         executable: /bin/bash
 

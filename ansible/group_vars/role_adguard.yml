@@ -27,3 +27,6 @@ adguard_dns_rewrites:
   - domain: "*.docker.internal"
     answer: "{{ adguard_docker_reverse_proxy_ip }}"
     enabled: true
+  - domain: "*.k3s.internal"
+    answer: "192.168.1.104"
+    enabled: true

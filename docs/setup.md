@@ -85,7 +85,35 @@ ssh -V
 ssh-keygen -V
 ```
 
-Used by `make ssh-cleanup` / `ssh-accept-keys` (`Makefile:78`) which cleans both `192.168.1.100` (Proxmox) and `192.168.1.102` (Docker VM).
+Used by `make ssh-cleanup` / `ssh-accept-keys` (`Makefile:98`) which cleans/accepts `192.168.1.100` (Proxmox), `192.168.1.102` (Docker VM) and `192.168.1.104` (K3s).
+
+#### kubectl
+
+Kubernetes CLI for the K3s cluster (`192.168.1.104`). Preferred via Make (Linux amd64, stable):
+
+```bash
+make kubectl-install   # curl stable.txt -> /usr/local/bin/kubectl
+kubectl version --client
+```
+
+Manual alternatives:
+
+```bash
+# macOS
+brew install kubectl
+
+# Linux (Debian/Ubuntu) - manual equivalent of make kubectl-install
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+
+# Windows
+choco install kubernetes-cli
+
+# Verify
+kubectl version --client
+```
+
+Tested client `v1.37.1` (Kustomize `v5.8.1`) against server `v1.36.4+k3s1` (`kubectl get nodes`). Client/server skew of ±1 minor is supported; `stable.txt` may be newer. The kubeconfig itself is fetched by `ansible/playbooks/install_k3s.yml:35` to `ansible/playbooks/files/k3s.yaml` (gitignored via `.gitignore:36`) and wired locally via `make kubectl-config` / `make kubectl-setup` (see Verification > K3s).
 
 ### Proxmox Setup
 
@@ -266,7 +294,9 @@ make tf-plan        # Preview infrastructure changes (terraform plan)
 ### 2. Deploy Infrastructure
 
 ```bash
-make all            # Full deployment: tf-init → tf-apply → ansible-install → ssh-cleanup → ansible-all
+make all            # Full deployment: ansible-pve → tf-init → tf-apply → ansible-pve-host → ansible-all (adguard + docker + plex + k3s)
+# Opt-in local kubectl wiring (Linux):
+make kubectl-setup  # install kubectl + copy kubeconfig -> ~/.kube/config
 ```
 
 If this is a fresh deployment you need to do two one-time state steps first (local only, no infra changes):
@@ -283,12 +313,16 @@ Or step by step:
 
 ```bash
 make tf-init        # Initialize Terraform
-make tf-apply       # Create LXC and VM
+make tf-apply       # Create LXC and VMs (incl. K3s .104)
 make ansible-install # Install Ansible collections (prefers .venv)
-make ansible-all    # Configure services (runs ssh-accept-keys first)
+make ansible-all    # Configure services (runs ssh-accept-keys first, now includes k3s)
+# Or single role:
+make ansible-k3s    # K3s only
+# Local kubectl (opt-in, Linux):
+make kubectl-setup  # install kubectl + configure ~/.kube/config
 ```
 
-> `make ansible-adguard` / `make ansible-docker` also run `ssh-accept-keys` automatically. Only manual `ansible-playbook` needs `make ssh-cleanup`/`make ssh-accept-keys` separately.
+> `make ansible-adguard` / `make ansible-docker` / `make ansible-plex` / `make ansible-k3s` also run `ssh-accept-keys` automatically (.100, .102, .104). Only manual `ansible-playbook` needs `make ssh-cleanup`/`make ssh-accept-keys` separately.
 
 ### 3. What Happens
 
@@ -297,10 +331,12 @@ make ansible-all    # Configure services (runs ssh-accept-keys first)
    - AdGuard LXC container (Debian 13, `terraform/modules/adguard_lxc:19`) at `192.168.1.101` (`local-lvm`, 512 MB, 1 core, tag `management-plane`)
    - Docker VM (Ubuntu 24.04 noble, `terraform/modules/docker_vm:9`) at `192.168.1.102` (10 GB boot + 50 GB data, 2–8 GB RAM)
    - Plex LXC container (Debian 13) at `192.168.1.103` with `/PlexMedia` + `/plex-config` bind mounts and `/dev/dri` GPU passthrough
+   - K3s VM (Ubuntu 24.04 minimal, `terraform/modules/k3s_vm:1`) at `192.168.1.104` (10 GB boot + 30 GB `K3s-DATA`, 4 cores, 4–6 GB RAM, tags `k3s-node` + `role-k3s`, firewall 6443/10250/8472/80/443)
 3. **Ansible** configures:
    - AdGuard Home DNS server with ad blocking + self-signed TLS (see `ansible/README.md` TLS section)
    - Docker engine with `proxy-net` bridge network, `containerd` root on data disk, weekly prune cron
    - Plex Media Server (config stored on the USB SSD)
+   - K3s single-node control-plane (`ansible/playbooks/install_k3s.yml:1`, `INSTALL_K3S_EXEC="server --node-ip=192.168.1.104 --write-kubeconfig-mode 644"`, `inventory.yml:36` `role_k3s` -> `k3s-node` `192.168.1.104`, kubeconfig fetched to `ansible/playbooks/files/k3s.yaml` (`Makefile:10` `KUBECONFIG_SRC`, gitignored))
 
 ### 4. First-time Plex setup
 
@@ -351,6 +387,41 @@ open http://192.168.1.103:32400/web
 open http://plex.internal:32400/web
 ```
 
+### Check K3s / kubectl
+
+K3s is deployed via `make ansible-k3s` (`ansible/playbooks/install_k3s.yml:1`, `terraform/modules/k3s_vm:1`). The playbook fetches the kubeconfig to `ansible/playbooks/files/k3s.yaml` (`Makefile:10` `KUBECONFIG_SRC`). The remote file contains `server: https://127.0.0.1:6443` and must be patched to the LAN IP before use.
+
+**Opt-in Make path (Linux, recommended):**
+
+```bash
+make kubectl-setup   # install kubectl (stable) + patch 127.0.0.1 -> 192.168.1.104 + cp -> ~/.kube/config (600) + kubectl get nodes
+# Equivalent step-by-step:
+make kubectl-install # curl stable.txt -> /usr/local/bin/kubectl, then kubectl version --client
+make kubectl-config  # sed + cp + chmod 600 + verify
+```
+
+**Manual equivalent (any OS after kubectl is installed):**
+
+```bash
+# 1. Fixup server IP (common pitfall: files/k3s.yaml does not exist; correct path is ansible/playbooks/files/k3s.yaml)
+sed -i 's/127.0.0.1/192.168.1.104/g' ansible/playbooks/files/k3s.yaml
+
+# 2. Install kubeconfig
+mkdir -p ~/.kube
+cp ansible/playbooks/files/k3s.yaml ~/.kube/config
+chmod 600 ~/.kube/config
+
+# 3. Verify (tested: Client v1.37.1 Kustomize v5.8.1 vs Server v1.36.4+k3s1)
+kubectl version --client
+kubectl get nodes
+# Expected: NAME   STATUS   ROLES           AGE   VERSION
+#           ubuntu Ready    control-plane   ...   v1.36.4+k3s1
+kubectl cluster-info
+kubectl get pods -A
+```
+
+> `ansible/playbooks/files/k3s.yaml` is gitignored (`.gitignore:36` `/ansible/playbooks/files/`). Do not commit it; if you need to run `sed` again it is idempotent. If `kubectl-config` reports `Missing ... Run 'make ansible-k3s' first`, the file hasn't been fetched yet.
+
 ### Check Docker Context
 
 ```bash
@@ -366,9 +437,10 @@ Override user if needed: `make docker-context DOCKER_USER=myuser`.
 ## Next Steps
 
 1. **Configure client DNS** — See [Local Network Setup](network-setup.md)
-2. **Deploy apps** — See [Apps](../apps/README.md); add docker-compose files to `apps/docker/` (e.g., `nginx`, `mini_io`) — docker apps use `*.docker.internal` (`DOMAIN=docker.internal`, wildcard `*.docker.internal → 192.168.1.102` in `ansible/group_vars/role_adguard.yml:20`)
-3. **Add DNS rewrites** — Edit `ansible/group_vars/role_adguard.yml:20` (infrastructure hosts `adguard.internal`/`plex.internal` are explicit; docker apps are covered by the `*.docker.internal` wildcard)
-4. **Retire the old Plex container (192.168.1.150)** — once 103 is verified, destroy the manually-created LXC 100 (`pct destroy 100`) and reclaim the orphaned `vm-100-disk-1` volume. It is not managed by Terraform.
+2. **Deploy apps** — See [Apps](../apps/README.md); add docker-compose files to `apps/docker/` (e.g., `nginx`, `mini_io`) — docker apps use `*.docker.internal` (`DOMAIN=docker.internal`, wildcard `*.docker.internal → 192.168.1.102` in `ansible/group_vars/role_adguard.yml:20`); Kubernetes apps via `kubectl apply -f` on `192.168.1.104`
+3. **Add DNS rewrites** — Edit `ansible/group_vars/role_adguard.yml:20` (infrastructure hosts `adguard.internal`/`plex.internal` are explicit; docker apps are covered by the `*.docker.internal` wildcard; add `*.k8s.internal` -> `192.168.1.104` if you expose Traefik ingress)
+4. **Wire kubectl (opt-in)** — `make kubectl-setup` (see Verification > K3s) then `kubectl get nodes` should show `v1.36.4+k3s1`
+5. **Retire the old Plex container (192.168.1.150)** — once 103 is verified, destroy the manually-created LXC 100 (`pct destroy 100`) and reclaim the orphaned `vm-100-disk-1` volume. It is not managed by Terraform.
 
 ## Troubleshooting
 
@@ -377,8 +449,9 @@ Override user if needed: `make docker-context DOCKER_USER=myuser`.
 After Terraform recreates a VM, SSH host keys change and connections fail with "Host key verification failed" or timeout.
 
 ```bash
-make ssh-cleanup         # remove stale host keys (.100, .102)
+make ssh-cleanup         # remove stale host keys (.100, .102, .104)
 make ansible-docker      # reconnects with fresh keys (also runs ssh-accept-keys)
+make ansible-k3s         # same for K3s .104
 ```
 
 `make all` runs `ssh-cleanup` automatically before ansible, so this only affects manual `make ansible-*` runs on existing infrastructure.
@@ -386,7 +459,7 @@ make ansible-docker      # reconnects with fresh keys (also runs ssh-accept-keys
 ### Manual SSH key acceptance
 
 ```bash
-make ssh-accept-keys     # scan and add host keys to known_hosts (.100, .102)
+make ssh-accept-keys     # scan and add host keys to known_hosts (.100, .102, .104)
 ```
 
 ### Terraform fails to connect to Proxmox
@@ -412,3 +485,12 @@ make ssh-accept-keys     # scan and add host keys to known_hosts (.100, .102)
 - Check VM is running in Proxmox UI
 - Verify SSH key matches: `ssh -i ~/.ssh/id_ed25519 your-username@192.168.1.102`
 - Check data disk mount: `lsblk` / `mount | grep docker-data` (`ansible/group_vars/role_docker.yml:5`)
+
+### K3s / kubectl issues
+
+- **`sed: can't read files/k3s.yaml: No such file or directory`** — wrong path. Use `ansible/playbooks/files/k3s.yaml` (`Makefile:10` `KUBECONFIG_SRC`), not `files/k3s.yaml`. Or just run `make kubectl-config`.
+- **`Missing ansible/playbooks/files/k3s.yaml. Run 'make ansible-k3s' first.`** — `make kubectl-config` guards this; the file is fetched by `ansible/playbooks/install_k3s.yml:35` via `fetch` (gitignored).
+- **`kubectl get nodes` returns `Unable to connect to the server: dial tcp 127.0.0.1:6443`** — kubeconfig still points at loopback. Re-run `sed -i 's/127.0.0.1/192.168.1.104/g' ansible/playbooks/files/k3s.yaml` then `cp` to `~/.kube/config` (`make kubectl-config` does it atomically).
+- **`kubectl: certificate signed by unknown authority`** — ensure `~/.kube/config` has `certificate-authority-data` from the fetched file; don't hand-edit. Re-fetch: `make ansible-k3s && make kubectl-config`.
+- **`kubectl get nodes` shows NotReady** — SSH to `192.168.1.104` and `systemctl status k3s`, `journalctl -u k3s`, check firewall (`terraform/modules/k3s_vm:46` allows 6443/10250/8472). Verify `kubectl version --client` skew (tested `v1.37.1` vs `v1.36.4+k3s1`).
+- **SSH timeout to K3s** — `make ssh-cleanup` now covers `.104` (`Makefile:98`); then `make ssh-accept-keys` or `make ansible-k3s`.

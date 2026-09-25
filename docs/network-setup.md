@@ -7,14 +7,16 @@
 | Gateway | 192.168.1.1 | Router |
 | AdGuard | 192.168.1.101 | DNS ad blocking + admin UI |
 | Docker | 192.168.1.102 | Container runtime |
+| Plex | 192.168.1.103 | Plex Media Server |
+| K3s | 192.168.1.104 | K3s single-node (Traefik, Flannel) |
 
-Subnet: `192.168.1.0/24`
+Subnet: `192.168.1.0/24` · K3s kubeconfig wired via `make kubectl-setup` (`Makefile:106`, `ansible/playbooks/files/k3s.yaml` -> `~/.kube/config`)
 
 ## DHCP and IP Assignment
 
 This setup assumes your router uses default DHCP (automatically assigns IPs from a pool).
 
-**Important:** Terraform assigns static IPs to the homelab hosts (`.101`, `.102`). To prevent your router from assigning these IPs to other devices:
+**Important:** Terraform assigns static IPs to the homelab hosts (`.101`-`.104`). To prevent your router from assigning these IPs to other devices:
 
 1. **Set static DHCP reservation for Proxmox host** (`.100`) in your router
 2. **Reserve the homelab IP range** (`.100-.110`) in your router's DHCP pool to avoid collisions

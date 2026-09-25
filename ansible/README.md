@@ -23,11 +23,15 @@ source ansible/.venv/bin/activate
 # Deploy services
 make ansible-docker   # Docker host (192.168.1.102, user {{ admin_username }})
 make ansible-adguard  # AdGuard Home (LXC 101 via Proxmox API)
-make ansible-all      # both (runs ssh-accept-keys first)
+make ansible-plex     # Plex Media Server (LXC 103 via Proxmox API)
+make ansible-k3s      # K3s single-node (192.168.1.104, user {{ admin_username }})
+make ansible-all      # all (adguard + docker + plex + k3s, runs ssh-accept-keys first)
 make ansible-dry-run  # check mode
+# Local kubectl (opt-in, Linux):
+make kubectl-setup    # install kubectl + configure ~/.kube/config from ansible/playbooks/files/k3s.yaml
 ```
 
-`make ansible-*` targets automatically run `ssh-accept-keys` (`Makefile:58`). `make all` also runs `ssh-cleanup` before ansible.
+`make ansible-*` targets automatically run `ssh-accept-keys` (`Makefile:102`) which covers `.100`, `.102`, `.104`. `make all` also runs `ssh-cleanup` before ansible (`Makefile:98`).
 
 ## Vault (Secrets)
 
@@ -71,6 +75,8 @@ ansible-galaxy install -r requirements.yml --force
 # Run playbooks (ensure known_hosts or use Makefile's ssh-accept-keys)
 ansible-playbook playbooks/install_docker.yml
 ansible-playbook playbooks/install_adguard.yml
+ansible-playbook playbooks/install_plex.yml
+ansible-playbook playbooks/install_k3s.yml
 ```
 
 Pinned collections: see `requirements.yml:1` — `ansible.posix 2.2.0`, `community.docker 5.2.1`, `community.general 13.0.1`, `community.proxmox 2.0.0`.
@@ -79,8 +85,10 @@ Pinned collections: see `requirements.yml:1` — `ansible.posix 2.2.0`, `communi
 
 - `role_docker` → `docker-host` `192.168.1.102` via SSH as `{{ admin_username }}` (`group_vars/role_docker.yml:2`)
 - `role_adguard` → `adguard-host` Proxmox host `192.168.1.100` via `community.proxmox.proxmox_pct_remote` (`inventory.yml:13`, `proxmox_vmid: 101`)
+- `role_plex` → `plex-host` Proxmox host `192.168.1.100` via `community.proxmox.proxmox_pct_remote` (`inventory.yml:27`, `proxmox_vmid: 103`)
+- `role_k3s` → `k3s-node` `192.168.1.104` via SSH as `{{ admin_username }}` (`inventory.yml:36`, `group_vars/role_k3s.yml:1`)
 
-The AdGuard LXC is not SSHed directly; Ansible tunnels via Proxmox.
+The AdGuard/Plex LXC containers are not SSHed directly; Ansible tunnels via Proxmox. K3s is a VM reached directly over SSH.
 
 ## AdGuard Home TLS
 
@@ -108,3 +116,24 @@ To **trust the certificate on your machine**, see [Trusting the AdGuard TLS cert
 The Docker playbook (`playbooks/install_docker.yml:58`) creates a shared bridge network (`proxy-net`) used by nginx and application containers. Containers attached to this network can reach each other by container name, enabling service discovery without exposing ports on the host.
 
 Host config: data disk `virtio-DOCKER-DATA` mounted at `/mnt/docker-data` (`group_vars/role_docker.yml:5`), Docker `data-root` and `containerd` root on that mount, weekly prune cron Sunday 01:00 (`group_vars/role_docker.yml:21`, `tasks/docker_cleanup_cron.yml:14`), `geerlingguy.docker` role for engine + compose plugin.
+
+## K3s & kubeconfig
+
+The K3s playbook (`playbooks/install_k3s.yml:1`, `terraform/modules/k3s_vm:1`) provisions a single-node control-plane VM `192.168.1.104` (`inventory.yml:36` `role_k3s`):
+
+1. Checks `/usr/local/bin/k3s`; if absent runs `curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --node-ip=192.168.1.104 --write-kubeconfig-mode 644" sh -` (`playbooks/install_k3s.yml:9`).
+2. Ensures `k3s` systemd service is started/enabled, `k3s.yaml` mode `0644`, then `fetch`es `/etc/rancher/k3s/k3s.yaml` to `playbooks/files/k3s.yaml` (`playbooks/install_k3s.yml:35`, flat).
+3. That fetched file is gitignored via `.gitignore:36` (`/ansible/playbooks/files/`) and contains `server: https://127.0.0.1:6443` — patch it before use.
+
+Local wiring (Linux, opt-in):
+
+```bash
+make kubectl-setup    # install kubectl (stable) + patch 127.0.0.1 -> 192.168.1.104 + cp -> ~/.kube/config (600)
+# Or granular:
+make kubectl-install  # curl stable.txt -> /usr/local/bin/kubectl (tested v1.37.1, Kustomize v5.8.1 vs v1.36.4+k3s1)
+make kubectl-config   # sed -i 's/127.0.0.1/192.168.1.104/g' files, cp to ~/.kube/config, chmod 600, verify
+kubectl get nodes     # ubuntu Ready control-plane v1.36.4+k3s1
+kubectl cluster-info && kubectl get pods -A
+```
+
+Manual fallback (macOS `brew install kubectl`, Windows `choco install kubernetes-cli`) then the same `sed` + `cp` + `chmod 600` steps; see `docs/setup.md` Verification > K3s. Firewall for K3s is in `terraform/modules/k3s_vm:46` (ingress 6443/10250/8472/80/443, DNS egress to `192.168.1.101`).

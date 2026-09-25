@@ -5,7 +5,6 @@
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License" />
 </p>
 
-![Architecture](docs/images/diagram.png)
 ![Dell OptiPlex Homelab](docs/images/dell_optiplex.png)
 
 Proxmox VE homelab managed with Terraform and Ansible. Single `make all` provisions infrastructure, configures hosts, and deploys apps.

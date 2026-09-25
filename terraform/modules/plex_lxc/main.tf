@@ -20,8 +20,8 @@ module "plex_lxc" {
   enable_firewall = true
 
   # Resources
-  cores             = 2
-  memory            = 512
+  cores             = 3
+  memory            = 1024
   swap              = 512
   disk_datastore_id = "local-lvm"
   disk_size         = 8

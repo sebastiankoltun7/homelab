@@ -55,6 +55,40 @@ Routing via `VIRTUAL_HOST_MULTIPORTS` (requires `nginx-proxy` + DNS rewrites, te
 
 DNS wildcard `*.docker.internal → 192.168.1.102` is already configured in `ansible/group_vars/role_adguard.yml:20`, so `minio.docker.internal` resolves without extra rewrites.
 
+## Kubernetes apps (`k3s/`)
+
+Apps deployed to the K3s cluster (`192.168.1.104`). These do **not** use `proxy-net` — ingress is Traefik, and names are resolved by the `*.k3s.internal → 192.168.1.104` wildcard in `ansible/group_vars/role_adguard.yml:30`.
+
+Prerequisites:
+
+```bash
+make kubectl-setup  # wire ~/.kube/config (server https://192.168.1.104:6443)
+make helm-setup     # optional: install Helm for chart-based apps
+```
+
+### Headlamp (`k3s/headlamp`)
+
+Kubernetes dashboard, deployed with the pinned official chart (0.45.0) and
+[values.yaml](k3s/headlamp/values.yaml).
+
+```bash
+make headlamp-install   # helm upgrade --install (idempotent)
+```
+
+Get a token and open `https://dashboard.k3s.internal` — see [k3s/headlamp/README.md](k3s/headlamp/README.md).
+
+### Installing a chart
+
+```bash
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+helm search repo cert-manager
+helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace
+helm list -A
+```
+
+Charts must declare a `kubeVersion` compatible with the server (`v1.36.4+k3s1`); a newer constraint is a hard error, not a warning. Prefer OCI or digest-pinned installs for anything that pulls from a third-party registry.
+
 ## Adding a New App
 
 1. Create `apps/docker/<name>/docker-compose.yml` (and `.env.template` if needed — never commit `.env`).
@@ -74,12 +108,14 @@ services:
 3. Add DNS rewrite for `myapp.docker.internal` in `ansible/group_vars/role_adguard.yml:20` if outside the `*.docker.internal` wildcard (the wildcard already covers any `*.docker.internal → 192.168.1.102`), then re-run `make ansible-adguard`.
 4. Deploy via `docker --context homelab compose up -d`.
 
+For a Kubernetes app, put it under `apps/k3s/<name>/` instead: raw manifests are applied with `kubectl apply -f`, charts with `helm install` (`--version` pinned). No `proxy-net` and no AdGuard rewrite is needed — the `*.k3s.internal` wildcard already covers every hostname.
+
 ## Secrets
 
 `.env` files are gitignored (`/.gitignore:25`). Commit only `.env.template` with placeholder values (e.g., `changeme`). Example: `apps/docker/mini_io/.env` (ignored) vs `apps/docker/mini_io/.env.template` (tracked).
 
 ## Notes
 
-- `apps/k3s/` was removed (empty placeholder). File an issue if you want k3s support re-added.
+- `apps/k3s/headlamp/` is chart-based: the pinned chart version lives in the `headlamp-install` Makefile target and overrides in `values.yaml`, not a `Chart.lock` committed from a local run. Prefer the same layout for new chart-based apps.
 - Resource limits: MinIO capped at `512M` / `2 cpus` (`apps/docker/mini_io/docker-compose.yml:28`).
-- All apps expect `proxy-net` — `docker compose` will fail if Ansible hasn't created it.
+- All Docker apps expect `proxy-net` — `docker compose` will fail if Ansible hasn't created it. Kubernetes apps do not.

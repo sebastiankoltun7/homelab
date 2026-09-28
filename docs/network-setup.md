@@ -10,7 +10,7 @@
 | Plex | 192.168.1.103 | Plex Media Server |
 | K3s | 192.168.1.104 | K3s single-node (Traefik, Flannel) |
 
-Subnet: `192.168.1.0/24` · K3s kubeconfig wired via `make kubectl-setup` (`Makefile:106`, `ansible/playbooks/files/k3s.yaml` -> `~/.kube/config`)
+Subnet: `192.168.1.0/24` · K3s kubeconfig wired via `make kubectl-setup` (`Makefile:134`, `ansible/playbooks/files/k3s.yaml` -> `~/.kube/config`)
 
 ## DHCP and IP Assignment
 

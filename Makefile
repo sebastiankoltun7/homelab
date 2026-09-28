@@ -1,7 +1,10 @@
 .PHONY: help setup clean all \
         tf-init tf-plan tf-apply tf-destroy \
         ansible-install ansible-all ansible-adguard ansible-docker ansible-plex ansible-k3s ansible-pve ansible-pve-host ansible-dry-run \
-        vault-create terraform-tfvars docker-context ssh-accept-keys ssh-cleanup kubectl-install kubectl-config kubectl-setup
+        vault-create terraform-tfvars docker-context ssh-accept-keys ssh-cleanup \
+        kubectl-install kubectl-config kubectl-setup \
+        helm-install helm-setup \
+        headlamp-install headlamp-delete headlamp-token
 
 ANSIBLE_DIR := ansible
 TERRAFORM_DIR := terraform
@@ -10,6 +13,15 @@ DOCKER_HOST_IP := 192.168.1.102
 PROXMOX_HOST_IP := 192.168.1.100
 K3S_HOST_IP := 192.168.1.104
 KUBECONFIG_SRC := ansible/playbooks/files/k3s.yaml
+HELM_VERSION ?=
+HELM_INSTALLER := /tmp/get-helm-4
+HELM_INSTALLER_URL := https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
+export HELM_VERSION   # consumed by get-helm-4 via --version
+HEADLAMP_DIR := apps/k3s/headlamp
+HEADLAMP_NAMESPACE := headlamp
+HEADLAMP_CHART_VERSION ?= 0.45.0
+HEADLAMP_REPO := headlamp
+HEADLAMP_REPO_URL := https://kubernetes-sigs.github.io/headlamp/
 ANSIBLE_PLAYBOOK = cd $(ANSIBLE_DIR) && ansible-playbook
 ANSIBLE_GALAXY = cd $(ANSIBLE_DIR) && ansible-galaxy
 
@@ -116,7 +128,7 @@ docker-context: ssh-accept-keys ## Setup remote Docker context
 	@docker context create homelab --docker "host=ssh://$(DOCKER_USER)@$(DOCKER_HOST_IP)"
 	@docker context use homelab
 
-# ── K3s / kubectl ────────────────────────────────
+# ── K3s / kubectl / helm ────────────────────────
 
 kubectl-install: ## Install kubectl (Linux amd64, stable)
 	@curl -LO "https://dl.k8s.io/release/$$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -135,6 +147,33 @@ kubectl-config: ## Configure kubeconfig from fetched k3s.yaml (127.0.0.1 -> 192.
 
 kubectl-setup: kubectl-install kubectl-config ## Full local kubectl setup (install + kubeconfig, opt-in)
 	@echo "kubectl ready. Try: kubectl cluster-info && kubectl get pods -A"
+
+helm-install: ## Install Helm CLI (official get-helm-4 script; prompts for sudo)
+	@curl -fsSL -o $(HELM_INSTALLER) $(HELM_INSTALLER_URL)
+	@chmod 700 $(HELM_INSTALLER)
+	@$(HELM_INSTALLER) $(if $(HELM_VERSION),--version $(HELM_VERSION))
+
+helm-setup: helm-install ## Install Helm and verify it against the K3s cluster (opt-in)
+	@helm list -A || (echo "helm list -A failed - run 'make kubectl-setup' and confirm 'kubectl get nodes' is Ready" && exit 1)
+	@echo "helm ready. Try: helm repo add jetstack https://charts.jetstack.io && helm search repo jetstack"
+
+# ── K3s apps (Helm) ──────────────────────────────
+
+headlamp-install: ## Install/upgrade Headlamp on K3s (pinned chart + apps/k3s/headlamp/values.yaml)
+	@helm repo add $(HEADLAMP_REPO) $(HEADLAMP_REPO_URL) >/dev/null 2>&1 || true
+	@helm repo update $(HEADLAMP_REPO) >/dev/null
+	@helm upgrade --install headlamp $(HEADLAMP_REPO)/headlamp \
+		--version $(HEADLAMP_CHART_VERSION) \
+		--namespace $(HEADLAMP_NAMESPACE) --create-namespace \
+		--values $(HEADLAMP_DIR)/values.yaml \
+		--wait
+	@echo "Headlamp ready at https://dashboard.k3s.internal - token: make headlamp-token"
+
+headlamp-delete: ## Uninstall Headlamp from K3s
+	@helm uninstall headlamp --namespace $(HEADLAMP_NAMESPACE)
+
+headlamp-token: ## Print a Headlamp login token (ServiceAccount headlamp-admin)
+	@kubectl create token headlamp-admin -n $(HEADLAMP_NAMESPACE) --duration=24h
 
 clean: ## Remove venv
 	@rm -rf $(ANSIBLE_DIR)/.venv

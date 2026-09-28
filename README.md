@@ -45,10 +45,12 @@ make docker-context      # remote Docker context setup (DOCKER_USER ?= skoltun)
 make kubectl-install     # install kubectl (Linux amd64, stable)
 make kubectl-config      # configure kubeconfig from fetched k3s.yaml (127.0.0.1 -> 192.168.1.104)
 make kubectl-setup       # full local kubectl setup (install + kubeconfig, opt-in)
+make helm-install        # install Helm CLI via the official get-helm-4 script (prompts for sudo)
+make helm-setup          # install Helm + verify against the K3s cluster (opt-in)
 make clean               # remove venv
 ```
 
-> `make all` runs `ansible-pve` → `tf-init` → `tf-apply` → `ansible-pve-host` → `ansible-all` (adguard + docker + plex + k3s). Manual `make ansible-*` runs also accept keys automatically (`ssh-accept-keys` covers .100, .102, .104). After K3s, run `make kubectl-setup` (opt-in) to install `kubectl` and wire `~/.kube/config`.
+> `make all` runs `ansible-pve` → `tf-init` → `tf-apply` → `ansible-pve-host` → `ansible-all` (adguard + docker + plex + k3s). Manual `make ansible-*` runs also accept keys automatically (`ssh-accept-keys` covers .100, .102, .104). After K3s, run `make kubectl-setup` (opt-in) to install `kubectl` and wire `~/.kube/config`; add `make helm-setup` if you want to deploy charts to the cluster.
 
 ## Infrastructure
 
@@ -67,6 +69,7 @@ Subnet: `192.168.1.0/24` · Tags: `management-plane` + `role-adguard`/`role-dock
 
 - `apps/docker/nginx` – `nginx-proxy` auto-discovery reverse proxy (expects `proxy-net` bridge)
 - `apps/docker/mini_io` – MinIO S3 example (copy `.env.template` → `.env` and set `MINIO_PASS`)
+- `apps/k3s/headlamp` – Headlamp dashboard on K3s (official chart via `make headlamp-install`, dashboard at `dashboard.k3s.internal`)
 
 See [Apps](apps/README.md) for usage and `VIRTUAL_HOST` routing.
 
@@ -85,6 +88,7 @@ See [Apps](apps/README.md) for usage and `VIRTUAL_HOST` routing.
 - Make, OpenSSH (`ssh-keygen`, `ssh-keyscan`), Docker >= 24.0
 - Python deps (auto-installed): `paramiko`, `proxmoxer`, `requests`
 - kubectl >= 1.36 (tested client `v1.37.1` / Kustomize `v5.8.1` vs server `v1.36.4+k3s1`; install via `make kubectl-install` on Linux, or `brew install kubectl` / `choco install kubernetes-cli`)
+- Helm >= 3 (optional, for K3s chart deployments; `make helm-install` runs the official `get-helm-4` installer and prompts for sudo, or `brew install helm` / `choco install kubernetes-helm`)
 - Proxmox VE host reachable at `192.168.1.100:8006`
 
 Provider/collections pinned: `bpg/proxmox 0.108.0` (`terraform/providers.tf:5`, `terraform/.terraform.lock.hcl:5`), `ansible.posix 2.2.0`, `community.docker 5.2.1`, `community.general 13.0.1`, `community.proxmox 2.0.0` (`ansible/requirements.yml:1`).

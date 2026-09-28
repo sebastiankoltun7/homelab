@@ -1,0 +1,65 @@
+# Values for the official Headlamp chart (headlamp/headlamp).
+# Deployed by `make headlamp-install`; the chart version is pinned in the Makefile.
+# Chart: https://kubernetes-sigs.github.io/headlamp/
+
+# dashboard.k3s.internal resolves via the *.k3s.internal wildcard in
+# ansible/group_vars/role_adguard.yml:30, so no extra AdGuard rewrite is needed.
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  hosts:
+    - host: dashboard.k3s.internal
+      paths:
+        - path: /
+          type: Prefix
+
+# Keep the name `headlamp-admin` so the token command in README.md stays stable.
+serviceAccount:
+  create: true
+  name: headlamp-admin
+
+clusterRoleBinding:
+  create: true
+  clusterRoleName: cluster-admin
+
+config:
+  inCluster: true
+  # Show the Helm tab in the UI - this release is Helm-managed.
+  enableHelm: true
+  oidc:
+    # No OIDC provider is configured, so suppress the chart's otherwise-empty
+    # Secret. Set create: true and fill in clientID/issuerURL to enable it.
+    secret:
+      create: false
+
+# Helm coalesces these with the chart's own defaults rather than replacing them,
+# so runAsUser/runAsGroup/seccomp are restated at both levels: the pod-level
+# values win at runtime, and the container-level values keep the rendered
+# manifest free of the chart's default 100/101.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+# The chart adds the writable emptyDir mounted at /tmp when readOnlyRootFilesystem
+# is true, so no explicit tmp-dir volume is needed.
+
+# The chart's appVersion is the image tag; no image override, so the two stay in sync.
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi

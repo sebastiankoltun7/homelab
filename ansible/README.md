@@ -31,7 +31,7 @@ make ansible-dry-run  # check mode
 make kubectl-setup    # install kubectl + configure ~/.kube/config from ansible/playbooks/files/k3s.yaml
 ```
 
-`make ansible-*` targets automatically run `ssh-accept-keys` (`Makefile:102`) which covers `.100`, `.102`, `.104`. `make all` also runs `ssh-cleanup` before ansible (`Makefile:98`).
+`make ansible-*` targets automatically run `ssh-accept-keys` (`Makefile:117`) which covers `.100`, `.102`, `.104`. `make all` also runs `ssh-cleanup` before ansible (`Makefile:112`).
 
 ## Vault (Secrets)
 

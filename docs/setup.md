@@ -25,7 +25,7 @@ Verify: `terraform version` (tested 1.16.x, see `terraform.tfstate:3`).
 
 #### Ansible
 
-Managed via `make setup` — creates `ansible/.venv` with `ansible-core` + `paramiko` `proxmoxer` `requests` (`Makefile:26`). No global install required.
+Managed via `make setup` — creates `ansible/.venv` with `ansible-core` + `paramiko` `proxmoxer` `requests` (`Makefile:37`). No global install required.
 
 ```bash
 # Alternative: global install
@@ -85,7 +85,7 @@ ssh -V
 ssh-keygen -V
 ```
 
-Used by `make ssh-cleanup` / `ssh-accept-keys` (`Makefile:98`) which cleans/accepts `192.168.1.100` (Proxmox), `192.168.1.102` (Docker VM) and `192.168.1.104` (K3s).
+Used by `make ssh-cleanup` / `ssh-accept-keys` (`Makefile:112`) which cleans/accepts `192.168.1.100` (Proxmox), `192.168.1.102` (Docker VM) and `192.168.1.104` (K3s).
 
 #### kubectl
 
@@ -114,6 +114,74 @@ kubectl version --client
 ```
 
 Tested client `v1.37.1` (Kustomize `v5.8.1`) against server `v1.36.4+k3s1` (`kubectl get nodes`). Client/server skew of ±1 minor is supported; `stable.txt` may be newer. The kubeconfig itself is fetched by `ansible/playbooks/install_k3s.yml:35` to `ansible/playbooks/files/k3s.yaml` (gitignored via `.gitignore:36`) and wired locally via `make kubectl-config` / `make kubectl-setup` (see Verification > K3s).
+
+#### Helm
+
+Kubernetes package manager for deploying charts to the K3s cluster (`192.168.1.104`). Optional — only needed if you install chart-based apps. Preferred via Make (latest stable, SHA256-verified):
+
+```bash
+make helm-install     # runs the official get-helm-4 installer (prompts for sudo)
+make helm-setup       # helm-install + `helm list -A` against the cluster (hard fail if unreachable)
+helm version
+```
+
+`helm-install` is a thin wrapper around the [official `get-helm-4` script](https://helm.sh/docs/intro/install/#from-script), so platform detection, `curl`/`wget` fallback, SHA256 verification and the "already installed" check all come from upstream:
+
+```make
+curl -fsSL -o /tmp/get-helm-4 https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
+chmod 700 /tmp/get-helm-4
+/tmp/get-helm-4 $(if $(HELM_VERSION),--version $(HELM_VERSION))
+```
+
+It installs to `/usr/local/bin` and **prompts for your sudo password** — run it from an interactive terminal, not from CI. Re-running when the version already matches is a no-op (`Helm v4.3.0 is already latest`). Requires `openssl` (used for the checksum) and `tar`; the script reports either if missing.
+
+Pin a specific version when you need reproducibility or want to stay on Helm 3 (the script adds a missing `v` prefix for you):
+
+```bash
+make helm-install HELM_VERSION=v3.22.0
+```
+
+To install without root, call the script directly with its own env vars:
+
+```bash
+USE_SUDO=false HELM_INSTALL_DIR=$HOME/.local/bin /tmp/get-helm-4
+```
+
+Manual alternatives:
+
+```bash
+# macOS
+brew install helm
+
+# Linux (Debian/Ubuntu) - official Helm project apt repo
+HELM_BUILDKITE_APT_KEY_ID="DDF78C3E6EBB2D2CC223C95C62BA89D07698DBC6"
+sudo apt-get install curl gpg apt-transport-https --yes
+curl -fsSL https://packages.buildkite.com/helm-linux/helm-debian/gpgkey > "${TMPDIR:-/tmp}/helm.gpg"
+# Ensure that the key ID matches to prevent a repository compromise from establishing an attacker controlled key
+if [ "$(gpg --show-keys --with-colons "${TMPDIR:-/tmp}/helm.gpg" | awk -F: '$1 == "fpr" {print $10}' | head -n 1)" != "${HELM_BUILDKITE_APT_KEY_ID}" ]; then echo "ERROR: Unexpected Helm APT key ID: potential key compromise"; exit 1; fi
+cat "${TMPDIR:-/tmp}/helm.gpg" | gpg --dearmor | sudo tee /usr/share/keyrings/helm.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/helm.gpg] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list
+sudo apt-get update
+sudo apt-get install helm
+
+# Windows
+choco install kubernetes-helm
+
+# Verify
+helm version
+```
+
+Tested `v4.3.0` (and `v3.22.0` for the pin path). `make helm-install` tracks the latest stable release, so it is not reproducible over time — pass `HELM_VERSION=` to pin. Upstream docs: <https://helm.sh/docs/intro/install/>.
+
+> **Helm 4 vs 3:** Helm 4 defaults to server-side apply for new releases and renames a few flags (`--atomic` → `--rollback-on-failure`, `--force` → `--force-replace`, both deprecated with warnings). Releases created by Helm 3 keep client-side apply after an upgrade. Charts v2 work unchanged. If a chart or plugin misbehaves, re-run with `make helm-install HELM_VERSION=v3.22.0`.
+
+> **Hardening:** `get-helm-4` verifies the SHA256 checksum by default (`VERIFY_CHECKSUM=true`) and supports detached GPG signature checks as well (`VERIFY_SIGNATURES=true`, needs `gpg` plus the maintainer keys from `curl https://raw.githubusercontent.com/helm/helm/main/KEYS | gpg --import`). To verify by hand instead:
+
+> ```bash
+> curl -LO https://get.helm.sh/helm-v4.3.0-linux-amd64.tar.gz
+> curl -LO https://get.helm.sh/helm-v4.3.0-linux-amd64.tar.gz.asc
+> gpg --verify helm-v4.3.0-linux-amd64.tar.gz.asc helm-v4.3.0-linux-amd64.tar.gz
+> ```
 
 ### Proxmox Setup
 
@@ -297,6 +365,8 @@ make tf-plan        # Preview infrastructure changes (terraform plan)
 make all            # Full deployment: ansible-pve → tf-init → tf-apply → ansible-pve-host → ansible-all (adguard + docker + plex + k3s)
 # Opt-in local kubectl wiring (Linux):
 make kubectl-setup  # install kubectl + copy kubeconfig -> ~/.kube/config
+# Opt-in local Helm install:
+make helm-setup     # install Helm (latest stable) + verify against the cluster
 ```
 
 If this is a fresh deployment you need to do two one-time state steps first (local only, no infra changes):
@@ -320,6 +390,8 @@ make ansible-all    # Configure services (runs ssh-accept-keys first, now includ
 make ansible-k3s    # K3s only
 # Local kubectl (opt-in, Linux):
 make kubectl-setup  # install kubectl + configure ~/.kube/config
+# Local Helm (opt-in, any OS/arch):
+make helm-setup     # install helm + `helm list -A` against the cluster
 ```
 
 > `make ansible-adguard` / `make ansible-docker` / `make ansible-plex` / `make ansible-k3s` also run `ssh-accept-keys` automatically (.100, .102, .104). Only manual `ansible-playbook` needs `make ssh-cleanup`/`make ssh-accept-keys` separately.
@@ -336,7 +408,7 @@ make kubectl-setup  # install kubectl + configure ~/.kube/config
    - AdGuard Home DNS server with ad blocking + self-signed TLS (see `ansible/README.md` TLS section)
    - Docker engine with `proxy-net` bridge network, `containerd` root on data disk, weekly prune cron
    - Plex Media Server (config stored on the USB SSD)
-   - K3s single-node control-plane (`ansible/playbooks/install_k3s.yml:1`, `INSTALL_K3S_EXEC="server --node-ip=192.168.1.104 --write-kubeconfig-mode 644"`, `inventory.yml:36` `role_k3s` -> `k3s-node` `192.168.1.104`, kubeconfig fetched to `ansible/playbooks/files/k3s.yaml` (`Makefile:10` `KUBECONFIG_SRC`, gitignored))
+   - K3s single-node control-plane (`ansible/playbooks/install_k3s.yml:1`, `INSTALL_K3S_EXEC="server --node-ip=192.168.1.104 --write-kubeconfig-mode 644"`, `inventory.yml:36` `role_k3s` -> `k3s-node` `192.168.1.104`, kubeconfig fetched to `ansible/playbooks/files/k3s.yaml` (`Makefile:14` `KUBECONFIG_SRC`, gitignored))
 
 ### 4. First-time Plex setup
 
@@ -389,7 +461,7 @@ open http://plex.internal:32400/web
 
 ### Check K3s / kubectl
 
-K3s is deployed via `make ansible-k3s` (`ansible/playbooks/install_k3s.yml:1`, `terraform/modules/k3s_vm:1`). The playbook fetches the kubeconfig to `ansible/playbooks/files/k3s.yaml` (`Makefile:10` `KUBECONFIG_SRC`). The remote file contains `server: https://127.0.0.1:6443` and must be patched to the LAN IP before use.
+K3s is deployed via `make ansible-k3s` (`ansible/playbooks/install_k3s.yml:1`, `terraform/modules/k3s_vm:1`). The playbook fetches the kubeconfig to `ansible/playbooks/files/k3s.yaml` (`Makefile:14` `KUBECONFIG_SRC`). The remote file contains `server: https://127.0.0.1:6443` and must be patched to the LAN IP before use.
 
 **Opt-in Make path (Linux, recommended):**
 
@@ -422,6 +494,38 @@ kubectl get pods -A
 
 > `ansible/playbooks/files/k3s.yaml` is gitignored (`.gitignore:36` `/ansible/playbooks/files/`). Do not commit it; if you need to run `sed` again it is idempotent. If `kubectl-config` reports `Missing ... Run 'make ansible-k3s' first`, the file hasn't been fetched yet.
 
+### Check Helm
+
+Helm talks to the same kubeconfig as `kubectl`, so `make kubectl-setup` must have run first. `make helm-install` only installs the binary; `make helm-setup` additionally verifies cluster access and fails if the cluster is unreachable.
+
+```bash
+make helm-setup   # helm-install + `helm list -A` (exits 1 if the cluster is not reachable)
+
+# Equivalent step-by-step:
+make helm-install
+helm version
+helm list -A                  # releases across all namespaces
+helm repo list                # chart repositories (empty on a fresh install)
+```
+
+Adding a chart repository and installing a chart against the cluster:
+
+```bash
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+helm search repo cert-manager
+helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace
+helm list -A
+```
+
+Helm stores its state outside the kubeconfig in XDG directories — `~/.config/helm` (config, repos), `~/.cache/helm` (repository + chart cache), `~/.local/share/helm` (data). Removing the `helm` binary plus these three paths is a full uninstall. Override them with `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME`, `$XDG_DATA_HOME`; after changing the config path you must re-add repositories.
+
+For a quick end-to-end check against a throwaway namespace:
+
+```bash
+helm create /tmp/demo && helm install demo /tmp/demo --dry-run | head
+```
+
 ### Check Docker Context
 
 ```bash
@@ -437,10 +541,11 @@ Override user if needed: `make docker-context DOCKER_USER=myuser`.
 ## Next Steps
 
 1. **Configure client DNS** — See [Local Network Setup](network-setup.md)
-2. **Deploy apps** — See [Apps](../apps/README.md); add docker-compose files to `apps/docker/` (e.g., `nginx`, `mini_io`) — docker apps use `*.docker.internal` (`DOMAIN=docker.internal`, wildcard `*.docker.internal → 192.168.1.102` in `ansible/group_vars/role_adguard.yml:20`); Kubernetes apps via `kubectl apply -f` on `192.168.1.104`
+2. **Deploy apps** — See [Apps](../apps/README.md); add docker-compose files to `apps/docker/` (e.g., `nginx`, `mini_io`) — docker apps use `*.docker.internal` (`DOMAIN=docker.internal`, wildcard `*.docker.internal → 192.168.1.102` in `ansible/group_vars/role_adguard.yml:20`); Kubernetes apps via `make headlamp-install` on `192.168.1.104` (chart-based) or `kubectl apply -f` for raw manifests
 3. **Add DNS rewrites** — Edit `ansible/group_vars/role_adguard.yml:20` (infrastructure hosts `adguard.internal`/`plex.internal` are explicit; docker apps are covered by the `*.docker.internal` wildcard; add `*.k8s.internal` -> `192.168.1.104` if you expose Traefik ingress)
 4. **Wire kubectl (opt-in)** — `make kubectl-setup` (see Verification > K3s) then `kubectl get nodes` should show `v1.36.4+k3s1`
-5. **Retire the old Plex container (192.168.1.150)** — once 103 is verified, destroy the manually-created LXC 100 (`pct destroy 100`) and reclaim the orphaned `vm-100-disk-1` volume. It is not managed by Terraform.
+5. **Install Helm (opt-in)** — `make helm-setup` (see Verification > Helm) then `helm repo add <name> <url> && helm search repo <name>`. Only needed for chart-based Kubernetes apps.
+6. **Retire the old Plex container (192.168.1.150)** — once 103 is verified, destroy the manually-created LXC 100 (`pct destroy 100`) and reclaim the orphaned `vm-100-disk-1` volume. It is not managed by Terraform.
 
 ## Troubleshooting
 
@@ -488,9 +593,24 @@ make ssh-accept-keys     # scan and add host keys to known_hosts (.100, .102, .1
 
 ### K3s / kubectl issues
 
-- **`sed: can't read files/k3s.yaml: No such file or directory`** — wrong path. Use `ansible/playbooks/files/k3s.yaml` (`Makefile:10` `KUBECONFIG_SRC`), not `files/k3s.yaml`. Or just run `make kubectl-config`.
+- **`sed: can't read files/k3s.yaml: No such file or directory`** — wrong path. Use `ansible/playbooks/files/k3s.yaml` (`Makefile:14` `KUBECONFIG_SRC`), not `files/k3s.yaml`. Or just run `make kubectl-config`.
 - **`Missing ansible/playbooks/files/k3s.yaml. Run 'make ansible-k3s' first.`** — `make kubectl-config` guards this; the file is fetched by `ansible/playbooks/install_k3s.yml:35` via `fetch` (gitignored).
 - **`kubectl get nodes` returns `Unable to connect to the server: dial tcp 127.0.0.1:6443`** — kubeconfig still points at loopback. Re-run `sed -i 's/127.0.0.1/192.168.1.104/g' ansible/playbooks/files/k3s.yaml` then `cp` to `~/.kube/config` (`make kubectl-config` does it atomically).
 - **`kubectl: certificate signed by unknown authority`** — ensure `~/.kube/config` has `certificate-authority-data` from the fetched file; don't hand-edit. Re-fetch: `make ansible-k3s && make kubectl-config`.
 - **`kubectl get nodes` shows NotReady** — SSH to `192.168.1.104` and `systemctl status k3s`, `journalctl -u k3s`, check firewall (`terraform/modules/k3s_vm:46` allows 6443/10250/8472). Verify `kubectl version --client` skew (tested `v1.37.1` vs `v1.36.4+k3s1`).
-- **SSH timeout to K3s** — `make ssh-cleanup` now covers `.104` (`Makefile:98`); then `make ssh-accept-keys` or `make ansible-k3s`.
+- **SSH timeout to K3s** — `make ssh-cleanup` now covers `.104` (`Makefile:112`); then `make ssh-accept-keys` or `make ansible-k3s`.
+
+### Helm issues
+
+- **`helm: command not found`** — not installed. `make helm-install` installs to `/usr/local/bin`; if you used the rootless variant (`USE_SUDO=false HELM_INSTALL_DIR=$HOME/.local/bin`), add that directory to `PATH`.
+- **`sudo: a terminal is required to read the password`** — `make helm-install` shells out to `sudo`, which needs a TTY. Run it from an interactive terminal, or use the rootless variant above. Not usable from CI as-is.
+- **`Please install openssl or set VERIFY_CHECKSUM=false`** — `get-helm-4` checksums via `openssl`. Install it (`sudo apt-get install -y openssl`) or accept the weaker `VERIFY_CHECKSUM=false`.
+- **`No prebuilt binary for <os>-<arch>`** — your platform has no official build. `get-helm-4` lists the supported set (`darwin/linux/windows` × `amd64/arm64/386/arm/s390x/riscv64/ppc64le/loong64`); build from source otherwise.
+- **`Expected version arg ('3.22.0') to begin with 'v', fixing...`** — informational, not an error. The script normalises `HELM_VERSION=3.22.0` to `v3.22.0` for you.
+- **`Verifying checksum... FAILED`** — corrupt or tampered download; the script aborts and installs nothing. Re-run. Signature verification is described under Install Tools > Helm.
+- **`Helm v4.3.0 is already latest`** — informational no-op, not an error. `get-helm-4` skips the download when the installed version already matches the target.
+- **`helm list -A` reports `Kubernetes cluster unreachable`** — expected before `make kubectl-setup` has run; Helm uses the same `~/.kube/config`. `make helm-install` does not check the cluster, `make helm-setup` exits 1. Fix the kubeconfig first (see K3s / kubectl issues).
+- **`helm list -A` fails with `x509: certificate signed by unknown authority`** — the kubeconfig is missing `certificate-authority-data`, i.e. a hand-edited or stale `~/.kube/config`. Re-copy it from the fetched file: `make ansible-k3s && make kubectl-config`.
+- **`Error: Kubernetes cluster unreachable: tls: bad certificate`** or skew warnings on a chart install — a chart declaring a Kubernetes version constraint newer than the server (`v1.36.4+k3s1`). The `kubeVersion` field in `Chart.yaml` is a hard check, not a warning. Use a chart version compatible with 1.36, or upgrade the cluster.
+- **A Helm 3 chart misbehaves under Helm 4** — Helm 4 changes the default apply method for *new* releases to server-side apply and renames `--atomic`/`--force`. Re-run with `make helm-install HELM_VERSION=v3.22.0` to compare behaviour. Note that `helm upgrade` follows the previous apply method of the release, so a Helm 3 release is unaffected until you pass `--server-side`.
+- **Repository list is empty after changing `$XDG_CONFIG_HOME`** — Helm reads `~/.config/helm/repositories.yaml`; re-add repos with `helm repo add` after relocating config.

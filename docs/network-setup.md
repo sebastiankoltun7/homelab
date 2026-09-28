@@ -191,12 +191,12 @@ If either returns the AdGuard dashboard HTML (not a TLS error), the certificate 
 # Test resolution against AdGuard
 nslookup google.com 192.168.1.101
 nslookup adguard.internal 192.168.1.101
-nslookup minio.docker.internal 192.168.1.101  # docker apps: *.docker.internal → 192.168.1.102 (ansible/group_vars/role_adguard.yml:20)
+nslookup app.docker.internal 192.168.1.101  # docker apps: *.docker.internal → 192.168.1.102 (ansible/group_vars/role_adguard.yml:20)
 
 # Test from Linux/Mac
 dig @192.168.1.101 google.com
 dig @192.168.1.101 adguard.internal
-dig @192.168.1.101 minio.docker.internal
+dig @192.168.1.101 app.docker.internal
 
 # Check AdGuard dashboard
 open http://192.168.1.101
@@ -257,12 +257,12 @@ Configure in AdGuard dashboard (Settings > DNS settings):
 # Linux/Mac - test DNS resolution
 dig @192.168.1.101 google.com
 dig @192.168.1.101 adguard.internal
-dig @192.168.1.101 minio.docker.internal  # docker wildcard
+dig @192.168.1.101 app.docker.internal  # docker wildcard
 
 # Windows - test DNS resolution
 nslookup google.com 192.168.1.101
 nslookup adguard.internal 192.168.1.101
-nslookup minio.docker.internal 192.168.1.101
+nslookup app.docker.internal 192.168.1.101
 
 # Check if port 53 is open
 telnet 192.168.1.101 53

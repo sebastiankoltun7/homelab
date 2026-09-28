@@ -4,8 +4,9 @@
         vault-create terraform-tfvars docker-context ssh-accept-keys ssh-cleanup \
         kubectl-install kubectl-config kubectl-setup \
         helm-install helm-setup \
-        headlamp-install headlamp-delete headlamp-token \
-        monitoring-install monitoring-delete monitoring-password
+        helmfile-install helmfile-setup \
+        apps apps-diff apps-list apps-destroy \
+        headlamp-token monitoring-password
 
 ANSIBLE_DIR := ansible
 TERRAFORM_DIR := terraform
@@ -18,18 +19,9 @@ HELM_VERSION ?=
 HELM_INSTALLER := /tmp/get-helm-4
 HELM_INSTALLER_URL := https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
 export HELM_VERSION   # consumed by get-helm-4 via --version
-HEADLAMP_DIR := apps/k3s/headlamp
-HEADLAMP_NAMESPACE := headlamp
-HEADLAMP_CHART_VERSION ?= 0.45.0
-HEADLAMP_REPO := headlamp
-HEADLAMP_REPO_URL := https://kubernetes-sigs.github.io/headlamp/
-MONITORING_DIR := apps/k3s/monitoring
-MONITORING_NAMESPACE := monitoring
-MONITORING_CHART_VERSION ?= 91.8.1
-MONITORING_REPO := prometheus-community
-MONITORING_REPO_URL := https://prometheus-community.github.io/helm-charts
 ANSIBLE_PLAYBOOK = cd $(ANSIBLE_DIR) && ansible-playbook
 ANSIBLE_GALAXY = cd $(ANSIBLE_DIR) && ansible-galaxy
+
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -134,7 +126,7 @@ docker-context: ssh-accept-keys ## Setup remote Docker context
 	@docker context create homelab --docker "host=ssh://$(DOCKER_USER)@$(DOCKER_HOST_IP)"
 	@docker context use homelab
 
-# ── K3s / kubectl / helm ────────────────────────
+# ── K3s / kubectl / helm / helmfile ────────────
 
 kubectl-install: ## Install kubectl (Linux amd64, stable)
 	@curl -LO "https://dl.k8s.io/release/$$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -163,43 +155,50 @@ helm-setup: helm-install ## Install Helm and verify it against the K3s cluster (
 	@helm list -A || (echo "helm list -A failed - run 'make kubectl-setup' and confirm 'kubectl get nodes' is Ready" && exit 1)
 	@echo "helm ready. Try: helm repo add jetstack https://charts.jetstack.io && helm search repo jetstack"
 
-# ── K3s apps (Helm) ──────────────────────────────
+# ── Helmfile ───────────────────────────────────
 
-headlamp-install: ## Install/upgrade Headlamp on K3s (pinned chart + apps/k3s/headlamp/values.yaml)
-	@helm repo add $(HEADLAMP_REPO) $(HEADLAMP_REPO_URL) >/dev/null 2>&1 || true
-	@helm repo update $(HEADLAMP_REPO) >/dev/null
-	@helm upgrade --install headlamp $(HEADLAMP_REPO)/headlamp \
-		--version $(HEADLAMP_CHART_VERSION) \
-		--namespace $(HEADLAMP_NAMESPACE) --create-namespace \
-		--values $(HEADLAMP_DIR)/values.yaml \
-		--wait
-	@echo "Headlamp ready at https://dashboard.k3s.internal - token: make headlamp-token"
+helmfile-install: ## Install helmfile CLI (SHA256-verified release tarball; prompts for sudo)
+	@cd /tmp && curl -fsSLO https://github.com/helmfile/helmfile/releases/download/v1.8.0/helmfile_1.8.0_linux_amd64.tar.gz
+	@cd /tmp && curl -fsSLO https://github.com/helmfile/helmfile/releases/download/v1.8.0/helmfile_1.8.0_checksums.txt
+	@cd /tmp && sha256sum --ignore-missing -c helmfile_1.8.0_checksums.txt
+	@cd /tmp && tar xzf helmfile_1.8.0_linux_amd64.tar.gz helmfile && sudo mv helmfile /usr/local/bin/helmfile
+	@helmfile --version
 
-headlamp-delete: ## Uninstall Headlamp from K3s
-	@helm uninstall headlamp --namespace $(HEADLAMP_NAMESPACE)
+helmfile-setup: helmfile-install ## Install helmfile + the helm-diff plugin and verify against the K3s cluster (opt-in)
+	@helm plugin list | grep -q '^diff' || helm plugin install --keyring keys/helm-diff.gpg https://github.com/databus23/helm-diff/releases/latest/download/helm-diff-linux-amd64.tgz
+	@helmfile --file apps/k3s/helmfile.yaml list || (echo "helmfile list failed - run 'make kubectl-setup' and confirm 'kubectl get nodes' is Ready" && exit 1)
+	@echo "helmfile ready. Try: make apps-diff"
+
+# ── K3s apps (helmfile) ───────────────────────
+#
+# Everything below acts on apps/k3s/helmfile.yaml. To scope a run to one release,
+# call helmfile directly:
+#   helmfile --file apps/k3s/helmfile.yaml diff  -l name=headlamp
+#   helmfile --file apps/k3s/helmfile.yaml apply -l name=headlamp
+
+apps-diff: ## Show what would change for every release in apps/k3s/helmfile.yaml
+	@helmfile --file apps/k3s/helmfile.yaml diff
+
+apps: ## Install/upgrade every release in apps/k3s/helmfile.yaml (idempotent)
+	@helmfile --file apps/k3s/helmfile.yaml apply
+	@echo ""
+	@echo "Headlamp:   https://dashboard.k3s.internal (token: make headlamp-token)"
+	@echo "Grafana:    https://grafana.k3s.internal    (user: admin, password: make monitoring-password)"
+	@echo "Prometheus: https://grafana-prometheus.k3s.internal"
+
+apps-list: ## List the releases declared in apps/k3s/helmfile.yaml
+	@helmfile --file apps/k3s/helmfile.yaml list
+
+apps-destroy: ## Uninstall every release in apps/k3s/helmfile.yaml (leaves monitoring PVCs behind)
+	@helmfile --file apps/k3s/helmfile.yaml destroy
+	@echo "note: the monitoring PVCs come from StatefulSet volumeClaimTemplates, so they survive uninstall."
+	@echo "      Reclaim them with: kubectl delete pvc -n monitoring --all"
 
 headlamp-token: ## Print a Headlamp login token (ServiceAccount headlamp-admin)
-	@kubectl create token headlamp-admin -n $(HEADLAMP_NAMESPACE) --duration=24h
-
-monitoring-install: ## Install/upgrade Prometheus + Grafana on K3s (pinned chart + apps/k3s/monitoring/values.yaml)
-	@helm repo add $(MONITORING_REPO) $(MONITORING_REPO_URL) >/dev/null 2>&1 || true
-	@helm repo update $(MONITORING_REPO) >/dev/null
-	@helm upgrade --install $(MONITORING_NAMESPACE) $(MONITORING_REPO)/kube-prometheus-stack \
-		--version $(MONITORING_CHART_VERSION) \
-		--namespace $(MONITORING_NAMESPACE) --create-namespace \
-		--values $(MONITORING_DIR)/values.yaml \
-		--wait
-	@echo "Grafana:    https://grafana.k3s.internal (user: admin)"
-	@echo "Prometheus: https://grafana-prometheus.k3s.internal"
-	@echo "Password:   make monitoring-password"
-
-monitoring-delete: ## Uninstall Prometheus + Grafana from K3s
-	@helm uninstall $(MONITORING_NAMESPACE) --namespace $(MONITORING_NAMESPACE)
-	@echo "note: the PVCs come from StatefulSet volumeClaimTemplates, so they survive uninstall."
-	@echo "      Reclaim them with: kubectl delete pvc -n $(MONITORING_NAMESPACE) --all"
+	@kubectl create token headlamp-admin -n headlamp --duration=24h
 
 monitoring-password: ## Print the generated Grafana admin password
-	@kubectl get secret $(MONITORING_NAMESPACE)-grafana -n $(MONITORING_NAMESPACE) \
+	@kubectl get secret monitoring-grafana -n monitoring \
 		-o jsonpath='{.data.admin-password}' | base64 -d; echo
 
 clean: ## Remove venv

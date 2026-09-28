@@ -45,12 +45,20 @@ make docker-context      # remote Docker context setup (DOCKER_USER ?= skoltun)
 make kubectl-install     # install kubectl (Linux amd64, stable)
 make kubectl-config      # configure kubeconfig from fetched k3s.yaml (127.0.0.1 -> 192.168.1.104)
 make kubectl-setup       # full local kubectl setup (install + kubeconfig, opt-in)
-make helm-install        # install Helm CLI via the official get-helm-4 script (prompts for sudo)
+make helm-install        # install Helm CLI (official installer, prompts for sudo)
 make helm-setup          # install Helm + verify against the K3s cluster (opt-in)
+make helmfile-install    # install helmfile CLI (SHA256-verified release tarball; prompts for sudo)
+make helmfile-setup      # install helmfile + the helm-diff plugin, verified against the cluster (opt-in)
+make apps-diff           # show what would change for every release in apps/k3s/helmfile.yaml
+make apps                # install/upgrade every release in apps/k3s/helmfile.yaml (idempotent)
+make apps-list           # list the releases declared in apps/k3s/helmfile.yaml
+make apps-destroy        # uninstall every release in apps/k3s/helmfile.yaml
+make headlamp-token      # print a K3s dashboard login token
+make monitoring-password # print the generated Grafana admin password
 make clean               # remove venv
 ```
 
-> `make all` runs `ansible-pve` → `tf-init` → `tf-apply` → `ansible-pve-host` → `ansible-all` (adguard + docker + plex + k3s). Manual `make ansible-*` runs also accept keys automatically (`ssh-accept-keys` covers .100, .102, .104). After K3s, run `make kubectl-setup` (opt-in) to install `kubectl` and wire `~/.kube/config`; add `make helm-setup` if you want to deploy charts to the cluster.
+> `make all` runs `ansible-pve` → `tf-init` → `tf-apply` → `ansible-pve-host` → `ansible-all` (adguard + docker + plex + k3s). Manual `make ansible-*` runs also accept keys automatically (`ssh-accept-keys` covers .100, .102, .104). After K3s, run `make kubectl-setup` (opt-in) to install `kubectl` and wire `~/.kube/config`; add `make helmfile-setup` to deploy charts to the cluster.
 
 ## Infrastructure
 
@@ -67,29 +75,32 @@ Subnet: `192.168.1.0/24` · Tags: `management-plane` + `role-adguard`/`role-dock
 
 ## Apps
 
-- `apps/docker/nginx` – `nginx-proxy` auto-discovery reverse proxy (expects `proxy-net` bridge)
-- `apps/docker/mini_io` – MinIO S3 example (copy `.env.template` → `.env` and set `MINIO_PASS`)
-- `apps/k3s/headlamp` – Headlamp dashboard on K3s (official chart via `make headlamp-install`, dashboard at `dashboard.k3s.internal`)
-- `apps/k3s/monitoring` – Prometheus + Grafana on K3s (`make monitoring-install`, Grafana at `grafana.k3s.internal`)
+Two mechanisms, no others:
 
-See [Apps](apps/README.md) for usage and `VIRTUAL_HOST` routing.
+- **Docker Compose** on the Docker VM — add `apps/docker/<name>/docker-compose.yml`, attached to the
+  external `proxy-net` bridge, routed by `VIRTUAL_HOST` under the `*.docker.internal` wildcard.
+- **Helmfile** on K3s — add a release to `apps/k3s/helmfile.yaml` with overrides in
+  `apps/k3s/<name>/values.yaml`, then `make apps`.
+
+See [Apps](apps/README.md) for how to add, deploy, scope, and retire either kind.
 
 ## Documentation
 
 - [Initial Setup](docs/setup.md) - Prerequisites, Proxmox config, first deployment, troubleshooting
 - [Local Network Setup](docs/network-setup.md) - DNS configuration, client setup, trusting the AdGuard TLS certificate, troubleshooting
 - [Ansible](ansible/README.md) - Playbooks, vault, TLS cert, Docker network
-- [Apps](apps/README.md) - Docker Compose apps and proxy
+- [Apps](apps/README.md) - Adding and deploying apps with Docker Compose or helmfile
 
 ## Prerequisites
 
-- Terraform >= 1.0 (tested 1.16.x, state `version: 4`)
-- Ansible Core >= 2.14 (installed into `ansible/.venv` by `make setup`)
-- Python >= 3.12
-- Make, OpenSSH (`ssh-keygen`, `ssh-keyscan`), Docker >= 24.0
-- Python deps (auto-installed): `paramiko`, `proxmoxer`, `requests`
-- kubectl >= 1.36 (tested client `v1.37.1` / Kustomize `v5.8.1` vs server `v1.36.4+k3s1`; install via `make kubectl-install` on Linux, or `brew install kubectl` / `choco install kubernetes-cli`)
-- Helm >= 3 (optional, for K3s chart deployments; `make helm-install` runs the official `get-helm-4` installer and prompts for sudo, or `brew install helm` / `choco install kubernetes-helm`)
 - Proxmox VE host reachable at `192.168.1.100:8006`
+- Terraform >= 1.0, Python >= 3.12, Make, OpenSSH, Docker >= 24.0
+- Ansible Core >= 2.14 — installed into `ansible/.venv` by `make setup`, no global install needed
+- For the K3s apps: kubectl, Helm, helmfile + the `helm-diff` plugin. `make kubectl-setup`,
+  `make helm-setup` and `make helmfile-setup` install and verify all three; each prompts for
+  sudo, so run them from a terminal. Or install them with `brew` / `apt` and skip the targets.
+
+Versions tested: Terraform 1.16.x, kubectl `v1.37.1` against server `v1.36.4+k3s1`, Helm `v4.3.0`,
+helmfile `1.8.0`, helm-diff `3.15.15`.
 
 Provider/collections pinned: `bpg/proxmox 0.108.0` (`terraform/providers.tf:5`, `terraform/.terraform.lock.hcl:5`), `ansible.posix 2.2.0`, `community.docker 5.2.1`, `community.general 13.0.1`, `community.proxmox 2.0.0` (`ansible/requirements.yml:1`).

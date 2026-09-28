@@ -1,0 +1,136 @@
+# kube-prometheus-stack: Prometheus + Grafana + Alertmanager + node-exporter.
+# Deployed by `make monitoring-install`; chart version pinned in the Makefile.
+# Hostnames resolve via the *.k3s.internal wildcard (role_adguard.yml:30).
+
+# This node has 8.2Gi total allocatable storage and local-path cannot expand
+# (reclaimPolicy=Delete), so the PVCs below are sized to leave headroom.
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    # Chart default is 30s; 60s halves the series volume and is ample here.
+    scrapeInterval: 60s
+    # Backstop only - at 60s/15d this projects to ~1.4GB of the 4Gi PVC. It stops
+    # Prometheus filling a filesystem that cannot be grown.
+    retentionSize: 2GB
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          resources:
+            requests:
+              storage: 4Gi
+    # Measured ~430Mi at 52k series.
+    resources:
+      requests: {cpu: 200m, memory: 512Mi}
+      limits: {cpu: "1", memory: 2Gi}
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts: [grafana-prometheus.k3s.internal]
+
+  # k3s disables anonymous auth on the kubelet, so the chart's kubelet
+  # ServiceMonitor scrapes /metrics and gets HTTP 401 (target stays down, and
+  # every container/cAdvisor panel is empty). The chart has no knob for a
+  # bearer token, so these jobs replace that ServiceMonitor and authenticate
+  # with the pod's own projected service-account token - the operator's default
+  # ClusterRole already grants it nodes/metrics. All three keep job="kubelet"
+  # because the bundled dashboards query {job="kubelet"}.
+  additionalScrapeConfigs: |
+    - job_name: kubelet
+      scheme: https
+      metrics_path: /metrics
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tls_config:
+        insecure_skip_verify: true
+      kubernetes_sd_configs: [{role: node}]
+      relabel_configs:
+        - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+        - {source_labels: [__meta_kubernetes_node_name], target_label: instance}
+
+    - job_name: kubelet-cadvisor
+      scheme: https
+      metrics_path: /metrics/cadvisor
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tls_config:
+        insecure_skip_verify: true
+      kubernetes_sd_configs: [{role: node}]
+      relabel_configs:
+        - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+        - {source_labels: [__meta_kubernetes_node_name], target_label: instance}
+        - {target_label: job, replacement: kubelet}
+
+    - job_name: kubelet-probes
+      scheme: https
+      metrics_path: /metrics/probes
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tls_config:
+        insecure_skip_verify: true
+      kubernetes_sd_configs: [{role: node}]
+      relabel_configs:
+        - {source_labels: [__meta_kubernetes_node_name], target_label: node}
+        - {source_labels: [__meta_kubernetes_node_name], target_label: instance}
+        - {target_label: job, replacement: kubelet}
+
+kubelet:
+  serviceMonitor:
+    enabled: false   # replaced by the additionalScrapeConfigs above
+
+# This k3s control plane runs the control-plane components in-process, so the
+# chart's monitors for them would sit permanently down.
+kubeControllerManager: {enabled: false}
+kubeEtcd: {enabled: false}
+kubeScheduler: {enabled: false}
+
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          resources:
+            requests:
+              storage: 500Mi
+    resources:
+      requests: {cpu: 10m, memory: 32Mi}
+      limits: {cpu: 100m, memory: 128Mi}
+
+# The subcharts are named after themselves in Chart.yaml, so pod resources go
+# under these keys - not under the parent's nodeExporter:/kubeStateMetrics:
+# sections, which only drive the generated ServiceMonitors.
+kube-state-metrics:
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
+    limits: {cpu: 100m, memory: 128Mi}
+
+prometheus-node-exporter:
+  resources:
+    requests: {cpu: 10m, memory: 32Mi}
+    limits: {cpu: 100m, memory: 64Mi}
+
+prometheusOperator:
+  resources:
+    requests: {cpu: 20m, memory: 64Mi}
+    limits: {cpu: 200m, memory: 256Mi}
+
+grafana:
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 1Gi
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    labels:
+      app.kubernetes.io/part-of: traefik   # shows up in the traefik dashboard
+    hosts: [grafana.k3s.internal]
+  grafana.ini:
+    server:
+      root_url: https://grafana.k3s.internal   # correct links behind the ingress
+  env:
+    GF_METRICS_ENABLED: "true"   # otherwise the grafana target is connection-refused
+  serviceMonitor:
+    enabled: true
+  # Measured ~420Mi across all three containers (grafana + 2 sidecars)
+  resources:
+    requests: {cpu: 50m, memory: 512Mi}
+    limits: {cpu: 500m, memory: 1Gi}

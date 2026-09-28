@@ -77,6 +77,23 @@ make headlamp-install   # helm upgrade --install (idempotent)
 
 Get a token and open `https://dashboard.k3s.internal` — see [k3s/headlamp/README.md](k3s/headlamp/README.md).
 
+### Prometheus + Grafana (`k3s/monitoring`)
+
+Metrics, dashboards and alerting, deployed with the pinned kube-prometheus-stack chart
+(91.8.1) and [values.yaml](k3s/monitoring/values.yaml).
+
+```bash
+make monitoring-install     # helm upgrade --install (idempotent)
+make monitoring-password    # generated Grafana admin password
+```
+
+Grafana at `https://grafana.k3s.internal` (user `admin`), Prometheus UI at
+`https://grafana-prometheus.k3s.internal` — see
+[k3s/monitoring/README.md](k3s/monitoring/README.md).
+
+The values file carries a k3s-specific kubelet scrape override; the bundled dashboards are
+empty without it, so don't strip it.
+
 ### Installing a chart
 
 ```bash

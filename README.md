@@ -70,6 +70,7 @@ Subnet: `192.168.1.0/24` · Tags: `management-plane` + `role-adguard`/`role-dock
 - `apps/docker/nginx` – `nginx-proxy` auto-discovery reverse proxy (expects `proxy-net` bridge)
 - `apps/docker/mini_io` – MinIO S3 example (copy `.env.template` → `.env` and set `MINIO_PASS`)
 - `apps/k3s/headlamp` – Headlamp dashboard on K3s (official chart via `make headlamp-install`, dashboard at `dashboard.k3s.internal`)
+- `apps/k3s/monitoring` – Prometheus + Grafana on K3s (`make monitoring-install`, Grafana at `grafana.k3s.internal`)
 
 See [Apps](apps/README.md) for usage and `VIRTUAL_HOST` routing.
 

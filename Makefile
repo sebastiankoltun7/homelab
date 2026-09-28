@@ -4,7 +4,8 @@
         vault-create terraform-tfvars docker-context ssh-accept-keys ssh-cleanup \
         kubectl-install kubectl-config kubectl-setup \
         helm-install helm-setup \
-        headlamp-install headlamp-delete headlamp-token
+        headlamp-install headlamp-delete headlamp-token \
+        monitoring-install monitoring-delete monitoring-password
 
 ANSIBLE_DIR := ansible
 TERRAFORM_DIR := terraform
@@ -22,6 +23,11 @@ HEADLAMP_NAMESPACE := headlamp
 HEADLAMP_CHART_VERSION ?= 0.45.0
 HEADLAMP_REPO := headlamp
 HEADLAMP_REPO_URL := https://kubernetes-sigs.github.io/headlamp/
+MONITORING_DIR := apps/k3s/monitoring
+MONITORING_NAMESPACE := monitoring
+MONITORING_CHART_VERSION ?= 91.8.1
+MONITORING_REPO := prometheus-community
+MONITORING_REPO_URL := https://prometheus-community.github.io/helm-charts
 ANSIBLE_PLAYBOOK = cd $(ANSIBLE_DIR) && ansible-playbook
 ANSIBLE_GALAXY = cd $(ANSIBLE_DIR) && ansible-galaxy
 
@@ -174,6 +180,27 @@ headlamp-delete: ## Uninstall Headlamp from K3s
 
 headlamp-token: ## Print a Headlamp login token (ServiceAccount headlamp-admin)
 	@kubectl create token headlamp-admin -n $(HEADLAMP_NAMESPACE) --duration=24h
+
+monitoring-install: ## Install/upgrade Prometheus + Grafana on K3s (pinned chart + apps/k3s/monitoring/values.yaml)
+	@helm repo add $(MONITORING_REPO) $(MONITORING_REPO_URL) >/dev/null 2>&1 || true
+	@helm repo update $(MONITORING_REPO) >/dev/null
+	@helm upgrade --install $(MONITORING_NAMESPACE) $(MONITORING_REPO)/kube-prometheus-stack \
+		--version $(MONITORING_CHART_VERSION) \
+		--namespace $(MONITORING_NAMESPACE) --create-namespace \
+		--values $(MONITORING_DIR)/values.yaml \
+		--wait
+	@echo "Grafana:    https://grafana.k3s.internal (user: admin)"
+	@echo "Prometheus: https://grafana-prometheus.k3s.internal"
+	@echo "Password:   make monitoring-password"
+
+monitoring-delete: ## Uninstall Prometheus + Grafana from K3s
+	@helm uninstall $(MONITORING_NAMESPACE) --namespace $(MONITORING_NAMESPACE)
+	@echo "note: the PVCs come from StatefulSet volumeClaimTemplates, so they survive uninstall."
+	@echo "      Reclaim them with: kubectl delete pvc -n $(MONITORING_NAMESPACE) --all"
+
+monitoring-password: ## Print the generated Grafana admin password
+	@kubectl get secret $(MONITORING_NAMESPACE)-grafana -n $(MONITORING_NAMESPACE) \
+		-o jsonpath='{.data.admin-password}' | base64 -d; echo
 
 clean: ## Remove venv
 	@rm -rf $(ANSIBLE_DIR)/.venv

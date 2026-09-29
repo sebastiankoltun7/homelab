@@ -6,41 +6,43 @@ See the [project README](../README.md) and [Initial Setup](../docs/setup.md) for
 
 ## Prerequisites
 
-- **Python:** 3.12, pinned in [`.mise.toml`](../.mise.toml) and installed by `make tools`
-- **Ansible Core:** 2.14 or higher, installed into `.venv` by `make setup`
+- **Python:** 3.12, pinned in [`.mise.toml`](../.mise.toml) and installed by `mise install`
+- **Ansible Core:** 2.14 or higher, installed into `.venv` by `mise run setup-venv`
 - **Environment:** WSL2 / Linux / macOS
 
 ## Quick Start
 
 ```bash
 # From the project root
-make tools            # install the pinned toolchain (Python, terraform, kubectl, helm, helmfile)
-make setup            # create .venv + install ansible-core + collections + vault
-make ansible-install  # re-install collections (uses .venv if present)
+mise install          # install the pinned toolchain (Python, terraform, kubectl, helm, helmfile, bw)
+mise run setup        # create .venv + install ansible-core + collections + vault + SSH key + HCP token
+mise run ansible-install  # re-install collections (uses .venv if present)
 
 # Activate venv for direct usage
 source ansible/.venv/bin/activate
 
 # Deploy services
-make ansible-docker   # Docker host (192.168.1.102, user {{ admin_username }})
-make ansible-adguard  # AdGuard Home (LXC 101 via Proxmox API)
-make ansible-plex     # Plex Media Server (LXC 103 via Proxmox API)
-make ansible-k3s      # K3s single-node (192.168.1.104, user {{ admin_username }})
-make ansible-all      # all (adguard + docker + plex + k3s, runs ssh-accept-keys first)
-make ansible-dry-run  # check mode
+mise run ansible-docker   # Docker host (192.168.1.102, user {{ admin_username }})
+mise run ansible-adguard  # AdGuard Home (LXC 101 via Proxmox API)
+mise run ansible-plex     # Plex Media Server (LXC 103 via Proxmox API)
+mise run ansible-k3s      # K3s single-node (192.168.1.104, user {{ admin_username }})
+mise run ansible-all      # all (adguard + docker + plex + k3s, runs ssh-accept-keys first)
+mise run ansible-dry-run  # check mode
 # Local kubectl wiring:
-make kubectl-config   # configure ~/.kube/config from ansible/playbooks/files/k3s.yaml
+mise run kubectl-config   # configure ~/.kube/config from ansible/playbooks/files/k3s.yaml
 ```
 
-`make ansible-*` targets automatically run `ssh-accept-keys`, which covers `.100`, `.102`, `.104`. `make all` also runs `ssh-cleanup` before ansible.
+`mise run ansible-*` tasks automatically run `ssh-accept-keys`, which covers `.100`, `.102`, `.104`.
+`mise run all` also runs `ssh-cleanup` before ansible, and the K3s playbook may need
+`mise run wait-for-vms` to have passed if the VM was just created.
 
 ## Vault (Secrets)
 
-Secrets live in `group_vars/all/vault.yml` (gitignored via `../.gitignore:24`). On first run `make setup` copies the template for you.
+Secrets live in `group_vars/all/vault.yml` (gitignored via `../.gitignore:24`). On first run `mise run setup` copies the template for you.
 
 ```bash
 # Manually create if needed
-make vault-create
+mise run vault-create
 
 # Edit with your values
 $EDITOR ansible/group_vars/all/vault.yml
@@ -106,13 +108,12 @@ The K3s playbook (`playbooks/install_k3s.yml:1`, `terraform/modules/k3s_vm:1`) p
 Local wiring:
 
 ```bash
-make kubectl-config   # patch 127.0.0.1 -> 192.168.1.104, cp -> ~/.kube/config, chmod 600, verify
+mise run kubectl-config   # patch 127.0.0.1 -> 192.168.1.104, cp -> ~/.kube/config, chmod 600, verify
 kubectl get nodes     # ubuntu Ready control-plane v1.36.4+k3s1
 kubectl cluster-info && kubectl get pods -A
 ```
 
-`kubectl` is pinned in [`.mise.toml`](../.mise.toml) and invoked through `mise exec`, so the target
-needs no PATH setup and no sudo. In a shell that has not run `mise activate`, call it as
-`mise exec -- kubectl get nodes`.
+`kubectl` is pinned in [`.mise.toml`](../.mise.toml), so the task needs no PATH setup and no sudo.
+In a shell that has not run `mise activate`, call it as `mise exec -- kubectl get nodes`.
 
 Pinned collections: see `requirements.yml` — `ansible.posix 2.2.0`, `community.docker 5.2.1`, `community.general 13.0.1`, `community.proxmox 2.0.0`. The K3s firewall is in `terraform/modules/k3s_vm` (ingress 6443/10250/8472/80/443, DNS egress to `192.168.1.101`).

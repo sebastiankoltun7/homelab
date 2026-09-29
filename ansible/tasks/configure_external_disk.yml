@@ -16,7 +16,7 @@
     msg: |-
       External disk '{{ current_disk.name }}' (by-id '{{ current_disk.by_id }}')
       was not found on the Proxmox host.
-      Attach the drive, then re-run `make all`.
+      Attach the drive, then re-run `mise run all`.
       Currently connected disks:
       {{ lookup('pipe', 'lsblk -dob NAME,TRAN,SERIAL,MODEL') }}
   when: not disk_path.stat.exists
@@ -74,7 +74,7 @@
     msg: >-
       Directory '/mnt/pve/{{ current_disk.name }}/{{ item.item }}' is missing
       on drive '{{ current_disk.name }}'. Add it on the drive, then re-run
-      `make all`.
+      `mise run all`.
   loop: "{{ required_dirs.results }}"
   when: not item.stat.exists
 

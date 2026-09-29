@@ -5,39 +5,31 @@ Step-by-step setup for the homelab from scratch. For deploying apps, see [Apps](
 ## Prerequisites
 
 [mise](https://mise.jdx.dev/getting-started.html) is the only tool installed by hand. Everything
-else the CLI needs is pinned in [`.mise.toml`](../.mise.toml) and installed by `make tools`
-(`mise install`) — no `brew`, no `apt`, no `sudo mv` into `/usr/local/bin`.
+else the CLI needs is pinned in [`.mise.toml`](../.mise.toml) and installed by `mise install` — no
+`brew`, no `apt`, no `sudo mv` into `/usr/local/bin`.
 
 | Tool | Version | Installed by |
 | --- | --- | --- |
 | mise | any recent | manual, once |
-| Python | 3.12 | `make tools` |
-| Terraform | 1.16 | `make tools` |
-| kubectl | 1.37.1 | `make tools` |
-| Helm | 4.3.0 | `make tools` |
-| helmfile | 1.8.0 | `make tools` |
-| Ansible | 2.14+ | `make setup` (creates `ansible/.venv`) |
+| Python | 3.12 | `mise install` |
+| Terraform | 1.16 | `mise install` |
+| kubectl | 1.37.1 | `mise install` |
+| Helm | 4.3.0 | `mise install` |
+| helmfile | 1.8.0 | `mise install` |
+| Bitwarden CLI | latest | `mise install` |
+| Ansible | 2.14+ | `mise run setup-venv` (creates `ansible/.venv`) |
 
-`make tools` prints the resolved version of each tool, so it doubles as a verification step. Every
-Makefile target invokes the CLI through `mise exec`, so the versions in `.mise.toml` are used even
-in a shell where `mise activate` never ran.
+`mise run tools` prints the resolved version of each tool, so it doubles as a verification step.
+Mise tasks run with the pinned versions in `PATH`, so the versions in `.mise.toml` are used even in
+a shell where `mise activate` never ran.
 
-Not managed here: Docker (it is the runtime on the Docker VM, not a local CLI dependency), Make and
-OpenSSH (preinstalled on macOS/Linux), and the `helm-diff` Helm plugin.
+Also needed, and not managed by mise:
 
-Two targets remain because they configure local state rather than installing binaries:
-
-```bash
-make kubectl-config    # copies the playbook-fetched kubeconfig to ~/.kube/config
-make helm-diff         # installs the mandatory helm-diff plugin
-```
-
-`make kubectl-config` also patches the server address, and both targets fail if the cluster is
-unreachable.
-
-`make helm-diff` installs `helm-diff` from a release tarball, verified against
-`keys/helm-diff.gpg` committed in this repo. Helm 4 requires that: it refuses plugins
-installed from a git URL, and refuses tarballs whose signing key is not in a keyring.
+- **Bitwarden CLI** authenticated against a vault holding two items (see
+  [Credentials](#credentials-from-bitwarden)).
+- **`jq`** and **OpenSSH** — used by the `ssh-key` and `terraform-auth` tasks.
+- **Docker** — `mise run install-docker-local` installs the client on Linux/WSL2 (and adds your user
+  to the `docker` group). It is the client only; the Docker VM at `.102` is the runtime.
 
 Tested versions: Terraform 1.16.x, kubectl `v1.37.1` against server `v1.36.4+k3s1`, Helm `v4.3.0`,
 helmfile `1.8.0`, helm-diff `3.15.15`.
@@ -45,7 +37,7 @@ helmfile `1.8.0`, helm-diff `3.15.15`.
 > **Helm 4 vs 3:** Helm 4 defaults to server-side apply for *new* releases and renames
 > `--atomic` → `--rollback-on-failure` and `--force` → `--force-replace`. Releases created by
 > Helm 3 keep client-side apply after an upgrade. If a chart misbehaves, pin Helm 3 in
-> `.mise.toml` (`mise use helm@3.22.0`) and re-run `make tools`.
+> `.mise.toml` (`mise use helm@3.22.0`) and re-run `mise install`.
 
 ## Proxmox Setup
 
@@ -59,12 +51,14 @@ helmfile `1.8.0`, helm-diff `3.15.15`.
 
 ### 2. Add your SSH key to the Proxmox host
 
-Terraform and Ansible both reach the host over SSH:
+Terraform and Ansible both reach the host over SSH. `mise run ssh-key` imports your key from
+Bitwarden to `~/.ssh/id_ed25519` and loads it into `ssh-agent`, so all that is left is registering
+it with Proxmox:
 
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""    # if you do not have one
+mise run ssh-key        # fetches the key from Bitwarden (no-op if ~/.ssh/id_ed25519 exists)
 ssh-copy-id root@192.168.1.100
-ssh root@192.168.1.100                              # should not prompt
+ssh root@192.168.1.100  # should not prompt
 ```
 
 ## Configuration
@@ -72,17 +66,29 @@ ssh root@192.168.1.100                              # should not prompt
 ### 1. Run setup
 
 ```bash
-make setup
+mise run setup
 ```
 
-Runs `make tools` (mise installs the pinned toolchain), creates `ansible/.venv` with the Python
-dependencies, installs the pinned collections (`make ansible-install`), and copies config templates
-if missing: `terraform/terraform.tfvars` and `ansible/group_vars/all/vault.yml`. Activate the venv
-to run `ansible-playbook` directly:
+One bootstrap task, in dependency order:
+
+| Task | What it does |
+| --- | --- |
+| `tools` | `mise install`, then prints each tool's version |
+| `install-docker-local` | installs Docker and adds your user to the `docker` group |
+| `ssh-key` | imports `homelab-ssh-key` from Bitwarden into `~/.ssh`, loads ssh-agent |
+| `terraform-auth` | writes `~/.terraform.d/credentials.tfrc.json` from the `hcp-terraform-token` Bitwarden item (interactive) |
+| `ansible-install` | `setup-venv` (creates `ansible/.venv` with `ansible-core`, `paramiko`, `proxmoxer`, `requests`) then installs the pinned collections |
+| `vault-create` | copies `vault.yml` from the template if missing |
+| `terraform-tfvars` | copies `terraform.tfvars` from the template if missing |
+
+Activate the venv to run `ansible-playbook` directly:
 
 ```bash
 source ansible/.venv/bin/activate
 ```
+
+Individual pieces are available if you need only one: `mise run vault-create`, `mise run
+terraform-tfvars`, `mise run ansible-install`, `mise run clean` (removes the venv).
 
 ### 2. Configure Terraform
 
@@ -136,21 +142,38 @@ stable by-id name on the Proxmox host:
 ssh root@192.168.1.100 "ls -l /dev/disk/by-id/ | grep -i usb"
 ```
 
-`make all` detects the filesystem and mounts it persistently by UUID at `/mnt/pve/<name>` before
+`mise run all` detects the filesystem and mounts it persistently by UUID at `/mnt/pve/<name>` before
 Terraform creates the containers. `assert_dirs` must already exist on the drive; `create_dirs` is
 created if missing.
+
+### Credentials from Bitwarden
+
+Two tasks read from Bitwarden, both expecting the CLI to be installed (`mise install`) and the vault
+unlocked. Export `BW_SESSION=$(bw unlock --raw)` once to skip the interactive prompt; `terraform-auth`
+is flagged interactive and always prompts when the session is missing.
+
+| Task | Bitwarden item | Used for |
+| --- | --- | --- |
+| `mise run ssh-key` | `homelab-ssh-key` | private/public SSH key written to `~/.ssh/id_ed25519[.pub]`, loaded into ssh-agent |
+| `mise run terraform-auth` | `hcp-terraform-token` | the item's **notes** field, written to `~/.terraform.d/credentials.tfrc.json` for `app.terraform.io` |
+
+`ssh-key` is a no-op when `~/.ssh/id_ed25519` already exists, so it never overwrites a key you
+generated yourself.
 
 ## First Deployment
 
 ```bash
-make tf-plan     # preview
-make all         # ansible-pve → tf-init → tf-apply → ansible-pve-host → ansible-all
+mise run tf-plan    # preview
+mise run all        # ansible-install → ssh-cleanup → ssh-accept-keys → terraform-auth →
+                    # tf-init → tf-apply → wait-for-vms → ansible-pve → ansible-pve-host →
+                    # ansible-all → docker-context → kubectl-config → helm-diff → apps
 ```
 
-`make all` runs `ssh-accept-keys` first, so stale host keys after a VM rebuild are handled
-automatically. Run the steps individually with `make tf-init`, `make tf-apply`,
-`make ansible-all`, or a single role via `make ansible-adguard` / `ansible-docker` /
-`ansible-plex` / `ansible-k3s`.
+`mise run all` accepts SSH host keys first, so stale host keys after a VM rebuild are handled
+automatically. Run the steps individually with `mise run tf-init`, `mise run tf-apply`,
+`mise run ansible-all`, or a single role via `mise run ansible-adguard` / `ansible-docker` /
+`ansible-plex` / `ansible-k3s`. The manual `ansible-*` tasks accept host keys too, but only `all`
+clears stale ones first.
 
 On a **fresh** deployment, shift the shared template resource address first (the module gained a
 `count`), or Terraform will try to destroy and recreate it:
@@ -159,21 +182,49 @@ On a **fresh** deployment, shift the shared template resource address first (the
 terraform state mv 'module.adguard_home.module.adguard_lxc.proxmox_virtual_environment_file.debian_template' 'module.adguard_home.module.adguard_lxc.proxmox_virtual_environment_file.debian_template[0]'
 ```
 
-Then wire the local tools:
+`all` ends by wiring the local tools and deploying the cluster apps, so these are already done
+afterwards — run them individually only when re-doing that part:
 
 ```bash
-make kubectl-config    # ~/.kube/config from the fetched k3s.yaml
-make helm-diff         # helm-diff plugin, verified against the cluster
-make apps              # deploy everything in apps/k3s/helmfile.yaml
+mise run kubectl-config    # ~/.kube/config from the fetched k3s.yaml
+mise run helm-diff         # helm-diff plugin, verified against the cluster
+mise run docker-context    # remote Docker context "homelab"
+mise run apps              # deploy everything in apps/k3s/helmfile.yaml
 ```
 
 Claim Plex once from a browser at `http://192.168.1.103:32400/web` and point a library at
 `/PlexMedia`.
 
+## Logging in
+
+`mise run apps` prints the URLs below when it finishes. Credentials are read out of the cluster
+rather than stored in the repo:
+
+```bash
+mise run headlamp-token        # Headlamp login token, valid 24h
+mise run monitoring-password   # generated Grafana admin password
+```
+
+| Service | URL | Login |
+|---------|-----|-------|
+| Headlamp | `https://dashboard.k3s.internal` | paste the `headlamp-token` output into the token login box |
+| Grafana | `https://grafana.k3s.internal` | user `admin`, password from `monitoring-password` |
+| Prometheus | `https://grafana-prometheus.k3s.internal` | none |
+| AdGuard Home | `https://adguard.internal` | `admin_username` + the AdGuard password from `vault.yml` |
+| Plex | `http://192.168.1.103:32400/web` | claim once, then your Plex account |
+
+The Headlamp token is minted from the `headlamp-admin` service account (`cluster-admin`), so it is
+as powerful as root in the cluster and expires after 24h — re-run the task for a new one. The
+Grafana password is generated by the chart on first install and lives in the
+`monitoring-grafana` secret; it survives `mise run apps-destroy` only as long as the PVC does.
+
+The cluster serves Traefik's self-signed certificate, so browsers warn on the `*.k3s.internal`
+hostnames until you accept it.
+
 ## Verification
 
 ```bash
-docker info                              # Docker VM is up
+docker info                              # Docker VM is up (remote context "homelab")
 nslookup google.com 192.168.1.101        # AdGuard resolving
 ssh root@192.168.1.103 "findmnt /PlexMedia && ls /dev/dri"   # Plex mounts
 kubectl get nodes                        # K3s Ready
@@ -181,15 +232,15 @@ helmfile diff -f apps/k3s/helmfile.yaml  # empty == cluster matches the state fi
 ```
 
 Run the `kubectl` and `helmfile` commands through mise (`mise exec -- ...`) if your shell has not
-activated it, or use the `make` targets, which always do.
+activated it, or use the mise tasks, which always run with the pinned tools.
 
 The empty helmfile diff is the useful health check: it means the running releases are exactly what
-the state file declares, so `make apps` will be a no-op. Anything else means either the state file
-drifted or something changed the cluster outside Helm — read the diff before applying.
+the state file declares, so `mise run apps` will be a no-op. Anything else means either the state
+file drifted or something changed the cluster outside Helm — read the diff before applying.
 
-`make kubectl-config` handles the kubeconfig properly: the playbook fetches it to
+`mise run kubectl-config` handles the kubeconfig properly: the playbook fetches it to
 `ansible/playbooks/files/k3s.yaml` (gitignored) with `server: https://127.0.0.1:6443`, and the
-target patches that to the LAN IP before copying it to `~/.kube/config` with mode 600. Prefer it
+task patches that to the LAN IP before copying it to `~/.kube/config` with mode 600. Prefer it
 over editing the file by hand.
 
 ## Next Steps
@@ -208,20 +259,32 @@ over editing the file by hand.
 Terraform recreated a VM, so its host key changed.
 
 ```bash
-make ssh-cleanup     # clear stale keys for .100, .102, .104
+mise run ssh-cleanup     # clear stale keys for .100, .102, .104
 ```
 
-`make all` does this automatically; it only bites on manual `make ansible-*` runs.
+`mise run all` does this automatically; it only bites on manual `mise run ansible-*` runs.
 
 ### Terraform cannot reach Proxmox
 
 - Check `terraform.tfvars` credentials and that `curl -k https://192.168.1.100:8006` responds
 - `proxmox.node_name` must match the real Proxmox node name
+- Remote state needs the HCP token: re-run `mise run terraform-auth`
 
 ### Docker VM not accessible
 
 - Verify the VM is running and the SSH key matches: `ssh -i ~/.ssh/id_ed25519 <user>@192.168.1.102`
 - Check the data disk is mounted (`lsblk` / `mount | grep docker-data`)
+- `permission denied` on the Docker socket locally: the `install-docker-local` task adds you to the
+  `docker` group, but a new group needs a fresh login (or `wsl --shutdown` on WSL)
+
+### Bitwarden tasks fail
+
+- **`bw: command not found`** — `mise install` did not finish, or the shell has not picked up
+  mise's shims.
+- **`You are not logged in`** — unlock the vault, or export `BW_SESSION=$(bw unlock --raw)`.
+- **Missing item** — `homelab-ssh-key` and `hcp-terraform-token` must exist in the vault the CLI is
+  pointed at; `terraform-auth` reads the token from the item's notes field, which is empty if the
+  token was stored elsewhere.
 
 ### AdGuard dashboard unreachable
 
@@ -230,36 +293,37 @@ make ssh-cleanup     # clear stale keys for .100, .102, .104
 
 ### K3s / kubectl
 
-- **`dial tcp 127.0.0.1:6443`** — the kubeconfig still points at loopback. Run `make kubectl-config`
-  rather than editing by hand.
-- **`Missing ansible/playbooks/files/k3s.yaml`** — the file is fetched by `make ansible-k3s`; it is
-  gitignored and is not fetched until that playbook runs.
+- **`dial tcp 127.0.0.1:6443`** — the kubeconfig still points at loopback. Run `mise run
+  kubectl-config` rather than editing by hand.
+- **`Missing ansible/playbooks/files/k3s.yaml`** — the file is fetched by `mise run ansible-k3s`; it
+  is gitignored and is not fetched until that playbook runs.
 - **`certificate signed by unknown authority`** — a stale or hand-edited `~/.kube/config`. Re-fetch
-  with `make ansible-k3s && make kubectl-config`.
+  with `mise run ansible-k3s && mise run kubectl-config`.
 - **Node `NotReady`** — on `.104`, check `systemctl status k3s` and the firewall ports
   (6443/10250/8472).
-- **SSH timeout** — `make ssh-cleanup` then `make ssh-accept-keys`.
+- **SSH timeout** — `mise run ssh-cleanup` then `mise run ssh-accept-keys`.
 
 ### Helm / helmfile
 
 - **`mise: not found`** — only mise itself is installed by hand. See
   [mise.jdx.dev/getting-started](https://mise.jdx.dev/getting-started.html).
 - **`unknown command "diff" for "helm"`** — the helm-diff plugin is missing. It is not optional:
-  helmfile implements `apply` as diff-then-sync, so `make apps` needs it too. Run `make helm-diff`.
+  helmfile implements `apply` as diff-then-sync, so `mise run apps` needs it too. Run `mise run
+  helm-diff`.
 - **`Kubernetes cluster unreachable` / `x509: certificate signed by unknown authority`** — Helm and
   helmfile read the same `~/.kube/config` as kubectl. Fix the kubeconfig first.
-- **`plugin verification failed: open .../pubring.gpg`** — Helm 4 found no key to verify the plugin
-  against. `make helm-diff` passes `keys/helm-diff.gpg` via `--keyring`; if you install by
-  hand, pass it too.
+- **`no such file or directory` on the plugin tarball** — `mise run helm-diff` fetches the official
+  linux-amd64 release asset; on arm64 install the plugin with your platform's asset from
+  <https://github.com/databus23/helm-diff/releases>.
 - **A different tool version than `.mise.toml` says** — something earlier on `PATH` is shadowing it.
-  The `make` targets are immune because they call `mise exec`; a bare `terraform` or `helm` in your
-  shell is not, if that shell never ran `mise activate`.
+  Mise tasks are immune because they run inside mise's environment; a bare `terraform` or `helm` in
+  your shell is not, if that shell never ran `mise activate`. Use `mise exec -- <tool>`.
 - **Chart `kubeVersion` rejected** — a hard failure, not a warning. Pin a chart version compatible
   with `v1.36.4+k3s1`.
 - **`cannot be imported into the current release`** — Helm will not adopt resources that were
   created outside Helm. Delete them before the first chart install.
 - **A release shows as `DELETED` in the diff** — expected if its `installed:` flag is `false`;
-  `make apps` will uninstall it. See [Apps](../apps/README.md#retiring-a-release).
+  `mise run apps` will uninstall it. See [Apps](../apps/README.md#retiring-a-release).
 - **Pods stay Pending with no diff** — Helm 4's default wait is watcher-based and fails fast on
   charts with a `livenessProbe` but no `startupProbe`. Add `trackMode: helm-legacy` to the release
   or to `helmDefaults`. Harmless warning on Helm 3.

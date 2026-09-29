@@ -6,7 +6,7 @@
 #
 # To retire an app, set its `installed:` to false and run `mise run apps`: helmfile
 # reports it as DELETED in `apps-diff` and uninstalls the release on apply. The
-# entry stays in the file so you can flip it back. `make apps-destroy` removes
+# entry stays in the file so you can flip it back. `mise run apps-destroy` removes
 # everything at once, including entries already marked `installed: false`.
 
 repositories:

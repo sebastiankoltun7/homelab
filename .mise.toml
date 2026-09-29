@@ -28,7 +28,8 @@ Setup complete! Edit the following files with your values:
 - terraform/terraform.tfvars        (Proxmox credentials)
 - ansible/group_vars/all/vault.yml  (Secrets)
 
-Then run 'mise run all', followed by 'mise run kubectl-config' and 'mise run helm-diff'.
+Then run 'mise run all' for the full deployment, then 'mise run headlamp-token' and
+'mise run monitoring-password' to log in to Headlamp and Grafana.
 EOF
 """
 

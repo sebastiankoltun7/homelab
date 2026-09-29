@@ -1,5 +1,5 @@
 # Values for the official Headlamp chart (headlamp/headlamp).
-# Deployed by `make apps`; the chart version is pinned in apps/k3s/helmfile.yaml.
+# Deployed by `mise run apps`; the chart version is pinned in apps/k3s/helmfile.yaml.
 # Chart: https://kubernetes-sigs.github.io/headlamp/
 
 # dashboard.k3s.internal resolves via the *.k3s.internal wildcard in
@@ -13,7 +13,7 @@ ingress:
         - path: /
           type: Prefix
 
-# Keep the name `headlamp-admin` so `make headlamp-token` stays stable.
+# Keep the name `headlamp-admin` so `mise run headlamp-token` stays stable.
 serviceAccount:
   create: true
   name: headlamp-admin

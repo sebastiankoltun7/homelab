@@ -9,60 +9,139 @@
 
 ![Dell OptiPlex Homelab](docs/images/dell_optiplex.png)
 
-Proxmox VE homelab managed with Terraform and Ansible. Single `make all` provisions infrastructure, configures hosts, and deploys apps.
+Proxmox VE homelab managed with Terraform and Ansible, driven by
+[mise](https://mise.jdx.dev). A single `mise run all` provisions infrastructure, configures hosts,
+and deploys apps.
 
 ## Quick Start
 
 ```bash
-make setup                                          # mise toolchain + venv + config templates
-# Edit terraform/terraform.tfvars with Proxmox credentials
-# Edit ansible/group_vars/all/vault.yml with secrets
-make all                                            # full deployment
+# 1. Install mise once
+curl https://mise.run | sh
+
+# 2. Install the pinned toolchain (Python, Terraform, kubectl, Helm, helmfile, Bitwarden CLI)
+mise install
+
+# 3. Full deployment
+mise run all
 ```
 
-`make setup` runs `make tools` (`mise install` for the versions pinned in [`.mise.toml`](.mise.toml)),
-creates `ansible/.venv` (with `ansible-core`, `paramiko`, `proxmoxer`, `requests`) from the pinned
-Python, installs collections, and copies `vault.yml` / `terraform.tfvars` from templates if missing.
-Activate the venv with `source ansible/.venv/bin/activate` if you want to run `ansible-playbook`
-directly.
+`mise run all` is the whole deployment, from empty disks to deployed apps. It is safe to re-run —
+every step is idempotent — but for day-to-day work prefer the individual tasks below.
 
-## Commands
+Before step 3 you need two config files. `mise run setup` (or `mise run vault-create` +
+`mise run terraform-tfvars`) creates them from templates, imports your SSH key and the HCP
+Terraform token from Bitwarden, and installs the local Docker client:
 
 ```bash
-make help                # list all targets
-make setup               # mise toolchain + venv + collections + config templates
-make tools               # install the toolchain pinned in .mise.toml
-make tf-init             # initialize Terraform
-make tf-plan             # preview infrastructure
-make tf-apply            # apply infrastructure
-make tf-destroy          # destroy all infrastructure
-make ansible-install     # install Ansible collections (uses .venv if present)
-make ansible-all         # run all playbooks (adguard + docker + plex + k3s)
-make ansible-adguard     # deploy AdGuard Home
-make ansible-docker      # deploy Docker host
-make ansible-plex        # deploy Plex Media Server
-make ansible-k3s         # deploy K3s single-node (192.168.1.104)
-make ansible-pve         # mount external USB disks on Proxmox
-make ansible-dry-run     # check mode all playbooks
-make ssh-cleanup         # remove stale SSH host keys (.100, .102, .104)
-make ssh-accept-keys     # accept SSH host keys (.100, .102, .104)
-make docker-context      # remote Docker context setup (DOCKER_USER ?= skoltun)
-make kubectl-config      # wire ~/.kube/config from the fetched k3s.yaml (127.0.0.1 -> 192.168.1.104)
-make helm-diff           # install the helm-diff plugin, verified against the cluster
-make apps-diff           # show what would change for every release in apps/k3s/helmfile.yaml
-make apps                # install/upgrade every release in apps/k3s/helmfile.yaml (idempotent)
-make apps-list           # list the releases declared in apps/k3s/helmfile.yaml
-make apps-destroy        # uninstall every release in apps/k3s/helmfile.yaml
-make headlamp-token      # print a K3s dashboard login token
-make monitoring-password # print the generated Grafana admin password
-make clean               # remove venv
+mise run setup
+$EDITOR terraform/terraform.tfvars       # Proxmox credentials
+$EDITOR ansible/group_vars/all/vault.yml # secrets, admin_username must match tfvars
 ```
 
-> `make all` runs `ansible-pve` → `tf-init` → `tf-apply` → `ansible-pve-host` → `ansible-all` (adguard + docker + plex + k3s). Manual `make ansible-*` runs also accept keys automatically (`ssh-accept-keys` covers .100, .102, .104). After K3s, run `make kubectl-config` to wire `~/.kube/config` and `make helm-diff` before `make apps`.
+Then `mise run all`, and finally the service logins:
 
-`kubectl`, `helm`, `helmfile`, `terraform` and `python` are not installed by the Makefile — they are
-pinned in [`.mise.toml`](.mise.toml) and every target invokes them through `mise exec`, so the
-versions in that file are the ones that run. See [Prerequisites](#prerequisites).
+```bash
+mise run headlamp-token        # Headlamp  (Kubernetes dashboard)
+mise run monitoring-password   # Grafana   (monitoring stack)
+```
+
+## Tasks
+
+Every task lives in [`.mise.toml`](.mise.toml) and runs from the repo root. `mise run <task>`
+lists them with their descriptions; `mise <task>` is shorthand for the same thing.
+
+```bash
+mise run all                  # full deployment: disks, Terraform, Ansible, local tools, k3s apps
+```
+
+### Setup
+
+```bash
+mise run setup                # full local bootstrap (toolchain, Docker, SSH key, HCP token, venv, collections, templates)
+mise run tools                # mise install + print the resolved version of each tool
+mise run install-docker-local # install Docker Engine locally (Linux/WSL2)
+mise run ssh-key              # fetch the homelab SSH key from Bitwarden, load it into ssh-agent
+mise run terraform-auth       # fetch the HCP Terraform token from Bitwarden -> ~/.terraform.d
+mise run setup-venv           # create ansible/.venv from the pinned Python + dependencies
+mise run ansible-install      # install Ansible collections (re-runs when requirements.yml changes)
+mise run vault-create         # copy vault.yml.template -> group_vars/all/vault.yml (skip if exists)
+mise run terraform-tfvars     # copy terraform.tfvars.template -> terraform.tfvars (skip if exists)
+```
+
+### Terraform
+
+```bash
+mise run tf-init              # initialize Terraform
+mise run tf-plan              # preview infrastructure
+mise run tf-apply             # apply infrastructure
+mise run tf-destroy           # destroy all infrastructure
+```
+
+### Ansible
+
+```bash
+mise run ansible-all          # all playbooks (adguard + docker + plex + k3s)
+mise run ansible-adguard      # deploy AdGuard Home
+mise run ansible-docker       # deploy Docker host
+mise run ansible-plex         # deploy Plex Media Server
+mise run ansible-k3s          # deploy K3s single-node (192.168.1.104)
+mise run ansible-pve          # mount external USB disks on Proxmox
+mise run ansible-pve-host     # configure the Proxmox host for the plex LXC (GPU passthrough)
+mise run ansible-dry-run      # check mode, all playbooks
+```
+
+### Local machine
+
+```bash
+mise run wait-for-vms         # wait for the Docker/K3s VMs to finish booting and cloud-init
+mise run ssh-cleanup          # remove stale SSH host keys (.100, .102, .104)
+mise run ssh-accept-keys      # accept SSH host keys (.100, .102, .104)
+mise run docker-context       # remote Docker context "homelab" (DOCKER_USER from .mise.toml)
+mise run kubectl-config       # wire ~/.kube/config from the fetched k3s.yaml (127.0.0.1 -> 192.168.1.104)
+mise run helm-diff            # install the helm-diff plugin, verified against the cluster
+mise run clean                # remove ansible/.venv and the dependency stamp
+```
+
+### K3s apps
+
+```bash
+mise run apps-diff            # show what would change for every release in apps/k3s/helmfile.yaml
+mise run apps                 # install/upgrade every release in apps/k3s/helmfile.yaml (idempotent)
+mise run apps-list            # list the releases declared in apps/k3s/helmfile.yaml
+mise run apps-destroy         # uninstall every release in apps/k3s/helmfile.yaml
+```
+
+### Service logins
+
+Credentials are not stored in the repo — read them out of the cluster:
+
+```bash
+mise run headlamp-token       # Headlamp login token, valid 24h
+mise run monitoring-password  # generated Grafana admin password
+```
+
+| Service | URL | Login |
+|---------|-----|-------|
+| Headlamp | `https://dashboard.k3s.internal` | paste the `headlamp-token` output |
+| Grafana | `https://grafana.k3s.internal` | user `admin`, password from `monitoring-password` |
+| Prometheus | `https://grafana-prometheus.k3s.internal` | none |
+| AdGuard Home | `https://adguard.internal` | `admin_username` + password from `vault.yml` |
+| Plex | `http://192.168.1.103:32400/web` | claim once, then your Plex account |
+
+`mise run all` ends with `mise run apps`, which prints the first three URLs together with the tasks
+that produce the credentials.
+
+> `mise run all` runs, in order: `ansible-install` → `ssh-cleanup` → `ssh-accept-keys` →
+> `terraform-auth` → `tf-init` → `tf-apply` → `wait-for-vms` → `ansible-pve` → `ansible-pve-host` →
+> `ansible-all` → `docker-context` → `kubectl-config` → `helm-diff` → `apps`. Manual
+> `mise run ansible-*` runs also accept host keys first (`ssh-accept-keys` covers .100, .102, .104);
+> `ssh-cleanup` only happens inside `all`, so run it by hand after a VM rebuild.
+
+`kubectl`, `helm`, `helmfile`, `terraform` and `python` are not installed globally — they are pinned
+in [`.mise.toml`](.mise.toml), and mise tasks always run with those versions in `PATH`, even in a
+shell where `mise activate` never ran. For one-off commands outside a task use `mise exec -- ...`.
+See [Prerequisites](#prerequisites).
 
 ## Infrastructure
 
@@ -75,7 +154,7 @@ versions in that file are the ones that run. See [Prerequisites](#prerequisites)
 | k3s | VM (Ubuntu 24.04) | 192.168.1.104 | K3s single-node (Traefik + Flannel, `terraform/modules/k3s_vm`) |
 | gateway | Router | 192.168.1.1 | Network gateway |
 
-Subnet: `192.168.1.0/24` · Tags: `management-plane` + `role-adguard`/`role-docker`/`role-plex`/`role-k3s`. See [Local Network Setup](docs/network-setup.md) for DHCP/DNS details. K3s kubeconfig is fetched to `ansible/playbooks/files/k3s.yaml` and wired locally via `make kubectl-config`.
+Subnet: `192.168.1.0/24` · Tags: `management-plane` + `role-adguard`/`role-docker`/`role-plex`/`role-k3s`. See [Local Network Setup](docs/network-setup.md) for DHCP/DNS details. K3s kubeconfig is fetched to `ansible/playbooks/files/k3s.yaml` and wired locally via `mise run kubectl-config`.
 
 ## Apps
 
@@ -84,7 +163,7 @@ Two mechanisms, no others:
 - **Docker Compose** on the Docker VM — add `apps/docker/<name>/docker-compose.yml`, attached to the
   external `proxy-net` bridge, routed by `VIRTUAL_HOST` under the `*.docker.internal` wildcard.
 - **Helmfile** on K3s — add a release to `apps/k3s/helmfile.yaml` with overrides in
-  `apps/k3s/<name>/values.yaml`, then `make apps`.
+  `apps/k3s/<name>/values.yaml`, then `mise run apps`.
 
 See [Apps](apps/README.md) for how to add, deploy, scope, and retire either kind.
 
@@ -98,13 +177,18 @@ See [Apps](apps/README.md) for how to add, deploy, scope, and retire either kind
 ## Prerequisites
 
 - [mise](https://mise.jdx.dev/getting-started.html) — the only tool you install yourself. It manages
-  everything else from [`.mise.toml`](.mise.toml); `make tools` runs `mise install` for you.
+  everything else from [`.mise.toml`](.mise.toml); `mise install` fetches the pinned versions.
+- Bitwarden CLI + an unlocked vault — `mise run setup` reads two items from it: `homelab-ssh-key`
+  (written to `~/.ssh/id_ed25519`) and `hcp-terraform-token` (its notes become the HCP API token).
+  Set `BW_SESSION` to skip the interactive unlock, and note that `terraform-auth` is interactive.
+- `jq` and OpenSSH — used by the `ssh-key` and `terraform-auth` tasks.
 - Proxmox VE host reachable at `192.168.1.100:8006`
-- Make, OpenSSH, and Docker >= 24.0 (Docker is not managed by mise — it is the runtime on the
-  Docker VM, not a local CLI dependency)
-- Ansible Core >= 2.14 — installed into `ansible/.venv` by `make setup`, no global install needed
+- Docker >= 24.0 — installed for you on Linux/WSL2 by `mise run install-docker-local`; the Docker VM
+  is the runtime, so this is only the local client plus the remote `homelab` context.
+- Ansible Core >= 2.14 — installed into `ansible/.venv` by `mise run setup-venv`, no global install
+  needed. Activate it with `source ansible/.venv/bin/activate` to run `ansible-playbook` directly.
 
-Pinned in [`.mise.toml`](.mise.toml) and installed by `make tools`:
+Pinned in [`.mise.toml`](.mise.toml) and installed by `mise install`:
 
 | Tool | Version |
 |------|---------|
@@ -113,12 +197,14 @@ Pinned in [`.mise.toml`](.mise.toml) and installed by `make tools`:
 | kubectl | 1.37.1 |
 | Helm | 4.3.0 |
 | helmfile | 1.8.0 |
+| Bitwarden CLI | latest |
 
-`make kubectl-config` wires `~/.kube/config` and fails if the cluster is unreachable; `make helm-diff`
-installs the mandatory `helm-diff` plugin and verifies cluster access. Neither needs sudo.
+`mise run kubectl-config` wires `~/.kube/config` and fails if the cluster is unreachable; `mise run
+helm-diff` installs the mandatory `helm-diff` plugin from its release tarball and verifies cluster
+access. Neither needs sudo.
 
 To use a different tool version, edit `.mise.toml` (or `mise use helm@3.22.0`) and re-run
-`make tools`.
+`mise install`.
 
 Versions tested: Terraform 1.16.x, kubectl `v1.37.1` against server `v1.36.4+k3s1`, Helm `v4.3.0`,
 helmfile `1.8.0`, helm-diff `3.15.15`.

@@ -31,7 +31,7 @@
 
     - name: Fail when the plex container was not created
       ansible.builtin.fail:
-        msg: "Container {{ plex_vmid }} is missing. Run `make tf-apply` first."
+        msg: "Container {{ plex_vmid }} is missing. Run `mise run tf-apply` first."
       when: not plex_cfg.stat.exists
 
     - name: Read current container config

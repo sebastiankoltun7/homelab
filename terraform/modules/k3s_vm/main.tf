@@ -82,6 +82,11 @@ module "k3s_firewall" {
 
   # Outbound traffic leaving the K3s VM
   outbound_rules = [
+    # ALLOW: Gateway access
+    {
+      dest    = "192.168.1.1"
+      comment = "Allow gateway access"
+    },
     # ALLOW: DNS queries to your AdGuard container
     {
       port    = "53"

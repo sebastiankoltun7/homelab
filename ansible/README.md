@@ -6,14 +6,15 @@ See the [project README](../README.md) and [Initial Setup](../docs/setup.md) for
 
 ## Prerequisites
 
-- **Ansible Core:** 2.14 or higher (auto-installed into `.venv` by `make setup`)
-- **Python:** 3.12+
+- **Python:** 3.12, pinned in [`.mise.toml`](../.mise.toml) and installed by `make tools`
+- **Ansible Core:** 2.14 or higher, installed into `.venv` by `make setup`
 - **Environment:** WSL2 / Linux / macOS
 
 ## Quick Start
 
 ```bash
 # From the project root
+make tools            # install the pinned toolchain (Python, terraform, kubectl, helm, helmfile)
 make setup            # create .venv + install ansible-core + collections + vault
 make ansible-install  # re-install collections (uses .venv if present)
 
@@ -27,11 +28,11 @@ make ansible-plex     # Plex Media Server (LXC 103 via Proxmox API)
 make ansible-k3s      # K3s single-node (192.168.1.104, user {{ admin_username }})
 make ansible-all      # all (adguard + docker + plex + k3s, runs ssh-accept-keys first)
 make ansible-dry-run  # check mode
-# Local kubectl (opt-in, Linux):
-make kubectl-setup    # install kubectl + configure ~/.kube/config from ansible/playbooks/files/k3s.yaml
+# Local kubectl wiring:
+make kubectl-config   # configure ~/.kube/config from ansible/playbooks/files/k3s.yaml
 ```
 
-`make ansible-*` targets automatically run `ssh-accept-keys` (`Makefile:117`) which covers `.100`, `.102`, `.104`. `make all` also runs `ssh-cleanup` before ansible (`Makefile:112`).
+`make ansible-*` targets automatically run `ssh-accept-keys`, which covers `.100`, `.102`, `.104`. `make all` also runs `ssh-cleanup` before ansible.
 
 ## Vault (Secrets)
 
@@ -57,29 +58,6 @@ Generate a bcrypt hash:
 ```bash
 htpasswd -bnBC 10 "" 'yourpassword' | tr -d ':\n' | sed 's/$2y/$2a/'
 ```
-
-## Manual Setup (without Make)
-
-```bash
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install ansible-core paramiko proxmoxer requests
-
-# Install collections (uses .venv's ansible-galaxy if present)
-ansible-galaxy install -r requirements.yml --force
-# or
-.venv/bin/ansible-galaxy install -r requirements.yml --force
-
-# Run playbooks (ensure known_hosts or use Makefile's ssh-accept-keys)
-ansible-playbook playbooks/install_docker.yml
-ansible-playbook playbooks/install_adguard.yml
-ansible-playbook playbooks/install_plex.yml
-ansible-playbook playbooks/install_k3s.yml
-```
-
-Pinned collections: see `requirements.yml:1` — `ansible.posix 2.2.0`, `community.docker 5.2.1`, `community.general 13.0.1`, `community.proxmox 2.0.0`.
 
 ## Inventory
 
@@ -125,15 +103,16 @@ The K3s playbook (`playbooks/install_k3s.yml:1`, `terraform/modules/k3s_vm:1`) p
 2. Ensures `k3s` systemd service is started/enabled, `k3s.yaml` mode `0644`, then `fetch`es `/etc/rancher/k3s/k3s.yaml` to `playbooks/files/k3s.yaml` (`playbooks/install_k3s.yml:35`, flat).
 3. That fetched file is gitignored via `.gitignore:36` (`/ansible/playbooks/files/`) and contains `server: https://127.0.0.1:6443` — patch it before use.
 
-Local wiring (Linux, opt-in):
+Local wiring:
 
 ```bash
-make kubectl-setup    # install kubectl (stable) + patch 127.0.0.1 -> 192.168.1.104 + cp -> ~/.kube/config (600)
-# Or granular:
-make kubectl-install  # curl stable.txt -> /usr/local/bin/kubectl (tested v1.37.1, Kustomize v5.8.1 vs v1.36.4+k3s1)
-make kubectl-config   # sed -i 's/127.0.0.1/192.168.1.104/g' files, cp to ~/.kube/config, chmod 600, verify
+make kubectl-config   # patch 127.0.0.1 -> 192.168.1.104, cp -> ~/.kube/config, chmod 600, verify
 kubectl get nodes     # ubuntu Ready control-plane v1.36.4+k3s1
 kubectl cluster-info && kubectl get pods -A
 ```
 
-Manual fallback (macOS `brew install kubectl`, Windows `choco install kubernetes-cli`) then the same `sed` + `cp` + `chmod 600` steps; see `docs/setup.md` Verification > K3s. Firewall for K3s is in `terraform/modules/k3s_vm:46` (ingress 6443/10250/8472/80/443, DNS egress to `192.168.1.101`).
+`kubectl` is pinned in [`.mise.toml`](../.mise.toml) and invoked through `mise exec`, so the target
+needs no PATH setup and no sudo. In a shell that has not run `mise activate`, call it as
+`mise exec -- kubectl get nodes`.
+
+Pinned collections: see `requirements.yml` — `ansible.posix 2.2.0`, `community.docker 5.2.1`, `community.general 13.0.1`, `community.proxmox 2.0.0`. The K3s firewall is in `terraform/modules/k3s_vm` (ingress 6443/10250/8472/80/443, DNS egress to `192.168.1.101`).

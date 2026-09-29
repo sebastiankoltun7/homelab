@@ -48,22 +48,26 @@ per-app overrides in `apps/k3s/<name>/values.yaml`. Values paths resolve relativ
 file, so the commands below work from anywhere.
 
 ```bash
-make helmfile-setup    # once: helmfile + helm-diff, verified against the cluster
-make apps-diff         # preview what would change
-make apps              # install/upgrade everything (idempotent)
-make apps-list         # list declared releases
-make apps-destroy      # uninstall everything
+make tools           # once: helmfile + kubectl + helm, pinned in .mise.toml
+make helm-diff       # once: the helm-diff plugin helmfile needs
+make kubectl-config  # once: ~/.kube/config from the fetched k3s.yaml
+make apps-diff       # preview what would change
+make apps            # install/upgrade everything (idempotent)
+make apps-list       # list declared releases
+make apps-destroy    # uninstall everything
+```
+
+`helm`, `helmfile` and `kubectl` come from [`.mise.toml`](../../.mise.toml) and are invoked through
+`mise exec`, so the `make` targets do not depend on your shell having run `mise activate`. When
+calling helmfile directly, use `mise exec --` (or run it in an activated shell):
+
+```bash
+mise exec -- helmfile --file apps/k3s/helmfile.yaml diff   -l name=<release>
+mise exec -- helmfile --file apps/k3s/helmfile.yaml apply  -l name=<release>
+mise exec -- helmfile --file apps/k3s/helmfile.yaml destroy -l name=<release>
 ```
 
 `make apps` prints the app URLs and how to fetch their credentials when it finishes.
-
-To act on one release, call helmfile directly with a selector:
-
-```bash
-helmfile --file apps/k3s/helmfile.yaml diff   -l name=<release>
-helmfile --file apps/k3s/helmfile.yaml apply  -l name=<release>
-helmfile --file apps/k3s/helmfile.yaml destroy -l name=<release>
-```
 
 ### Adding a release
 

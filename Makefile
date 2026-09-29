@@ -1,10 +1,8 @@
-.PHONY: help setup clean all \
+.PHONY: help setup tools setup-venv clean all \
         tf-init tf-plan tf-apply tf-destroy \
         ansible-install ansible-all ansible-adguard ansible-docker ansible-plex ansible-k3s ansible-pve ansible-pve-host ansible-dry-run \
         vault-create terraform-tfvars docker-context ssh-accept-keys ssh-cleanup \
-        kubectl-install kubectl-config kubectl-setup \
-        helm-install helm-setup \
-        helmfile-install helmfile-setup \
+        kubectl-config helm-diff \
         apps apps-diff apps-list apps-destroy \
         headlamp-token monitoring-password
 
@@ -15,12 +13,22 @@ DOCKER_HOST_IP := 192.168.1.102
 PROXMOX_HOST_IP := 192.168.1.100
 K3S_HOST_IP := 192.168.1.104
 KUBECONFIG_SRC := ansible/playbooks/files/k3s.yaml
-HELM_VERSION ?=
-HELM_INSTALLER := /tmp/get-helm-4
-HELM_INSTALLER_URL := https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4
-export HELM_VERSION   # consumed by get-helm-4 via --version
+HELM_DIFF_KEYRING := keys/helm-diff.gpg
 ANSIBLE_PLAYBOOK = cd $(ANSIBLE_DIR) && ansible-playbook
 ANSIBLE_GALAXY = cd $(ANSIBLE_DIR) && ansible-galaxy
+
+# The CLI toolchain is pinned in .mise.toml, so the Makefile resolves every one of
+# these through `mise exec` rather than trusting whatever happens to be on PATH.
+# That makes the pinned versions the only ones used, in a login shell or in CI.
+# The fallback covers shells that never run `mise activate` (non-interactive
+# shells, editors, CI), which is exactly where a bare `mise` would not resolve.
+MISE := $(or $(shell command -v mise 2>/dev/null),$(HOME)/.local/bin/mise)
+mise_run = $(MISE) exec -- $(1)
+KUBECTL := $(call mise_run,kubectl)
+HELM := $(call mise_run,helm)
+HELMFILE := $(call mise_run,helmfile)
+TERRAFORM := $(call mise_run,terraform)
+PYTHON := $(call mise_run,python)
 
 
 help: ## Show this help
@@ -29,16 +37,24 @@ help: ## Show this help
 
 # ── Setup ──────────────────────────────────────
 
-setup: setup-venv ansible-install vault-create terraform-tfvars ## Full local setup
+setup: tools setup-venv ansible-install vault-create terraform-tfvars ## Full local setup
 	@echo ""
 	@echo "Setup complete. Edit the following files with your values:"
 	@echo "  - terraform/terraform.tfvars  (Proxmox credentials)"
 	@echo "  - ansible/group_vars/all/vault.yml  (secrets)"
 	@echo ""
-	@echo "Then run 'make all'."
+	@echo "Then run 'make all', followed by 'make kubectl-config' and 'make helm-diff'."
 
-setup-venv: ## Create venv and install dependencies
-	@cd $(ANSIBLE_DIR) && python3 -m venv .venv
+tools: ## Install the toolchain pinned in .mise.toml
+	@command -v $(MISE) >/dev/null 2>&1 || { echo "mise not found at '$(MISE)'. Install it from https://mise.jdx.dev/getting-started.html"; exit 1; }
+	@$(MISE) install
+	@$(TERRAFORM) version | head -1
+	@$(KUBECTL) version --client | head -1
+	@$(HELM) version --short
+	@$(HELMFILE) --version
+
+setup-venv: ## Create ansible/.venv from the pinned Python and install dependencies
+	@cd $(ANSIBLE_DIR) && $(PYTHON) -m venv .venv
 	@cd $(ANSIBLE_DIR) && .venv/bin/pip install --upgrade pip -q
 	@cd $(ANSIBLE_DIR) && .venv/bin/pip install ansible-core paramiko proxmoxer requests -q
 	@echo "Activate with: source ansible/.venv/bin/activate"
@@ -54,16 +70,16 @@ terraform-tfvars: ## Create terraform.tfvars from template (skip if exists)
 # ── Terraform ──────────────────────────────────
 
 tf-init: ## Initialize Terraform
-	@cd $(TERRAFORM_DIR) && terraform init
+	@cd $(TERRAFORM_DIR) && $(TERRAFORM) init
 
 tf-plan: ## Preview infrastructure changes
-	@cd $(TERRAFORM_DIR) && terraform plan
+	@cd $(TERRAFORM_DIR) && $(TERRAFORM) plan
 
 tf-apply: ## Apply infrastructure changes
-	@cd $(TERRAFORM_DIR) && terraform apply
+	@cd $(TERRAFORM_DIR) && $(TERRAFORM) apply
 
 tf-destroy: ## Destroy all infrastructure
-	@cd $(TERRAFORM_DIR) && terraform destroy
+	@cd $(TERRAFORM_DIR) && $(TERRAFORM) destroy
 
 # ── Ansible ────────────────────────────────────
 
@@ -126,13 +142,10 @@ docker-context: ssh-accept-keys ## Setup remote Docker context
 	@docker context create homelab --docker "host=ssh://$(DOCKER_USER)@$(DOCKER_HOST_IP)"
 	@docker context use homelab
 
-# ── K3s / kubectl / helm / helmfile ────────────
-
-kubectl-install: ## Install kubectl (Linux amd64, stable)
-	@curl -LO "https://dl.k8s.io/release/$$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-	@chmod +x kubectl
-	@sudo mv kubectl /usr/local/bin/kubectl
-	@kubectl version --client
+# ── K3s / helm / helmfile ───────────────────────
+#
+# The binaries come from .mise.toml (`make tools`). What is left to do is local
+# wiring: the kubeconfig, and the helm-diff plugin helmfile needs.
 
 kubectl-config: ## Configure kubeconfig from fetched k3s.yaml (127.0.0.1 -> 192.168.1.104)
 	@test -f $(KUBECONFIG_SRC) || (echo "Missing $(KUBECONFIG_SRC). Run 'make ansible-k3s' first." && exit 1)
@@ -141,64 +154,46 @@ kubectl-config: ## Configure kubeconfig from fetched k3s.yaml (127.0.0.1 -> 192.
 	@cp $(KUBECONFIG_SRC) ~/.kube/config
 	@chmod 600 ~/.kube/config
 	@echo "Kubeconfig installed to ~/.kube/config (server https://$(K3S_HOST_IP):6443)"
-	@kubectl get nodes || (echo "kubectl get nodes failed - check K3s is Ready (kubectl get nodes)" && exit 1)
+	@$(KUBECTL) get nodes || (echo "kubectl get nodes failed - check K3s is Ready on $(K3S_HOST_IP)" && exit 1)
 
-kubectl-setup: kubectl-install kubectl-config ## Full local kubectl setup (install + kubeconfig, opt-in)
-	@echo "kubectl ready. Try: kubectl cluster-info && kubectl get pods -A"
-
-helm-install: ## Install Helm CLI (official get-helm-4 script; prompts for sudo)
-	@curl -fsSL -o $(HELM_INSTALLER) $(HELM_INSTALLER_URL)
-	@chmod 700 $(HELM_INSTALLER)
-	@$(HELM_INSTALLER) $(if $(HELM_VERSION),--version $(HELM_VERSION))
-
-helm-setup: helm-install ## Install Helm and verify it against the K3s cluster (opt-in)
-	@helm list -A || (echo "helm list -A failed - run 'make kubectl-setup' and confirm 'kubectl get nodes' is Ready" && exit 1)
-	@echo "helm ready. Try: helm repo add jetstack https://charts.jetstack.io && helm search repo jetstack"
-
-# ── Helmfile ───────────────────────────────────
-
-helmfile-install: ## Install helmfile CLI (SHA256-verified release tarball; prompts for sudo)
-	@cd /tmp && curl -fsSLO https://github.com/helmfile/helmfile/releases/download/v1.8.0/helmfile_1.8.0_linux_amd64.tar.gz
-	@cd /tmp && curl -fsSLO https://github.com/helmfile/helmfile/releases/download/v1.8.0/helmfile_1.8.0_checksums.txt
-	@cd /tmp && sha256sum --ignore-missing -c helmfile_1.8.0_checksums.txt
-	@cd /tmp && tar xzf helmfile_1.8.0_linux_amd64.tar.gz helmfile && sudo mv helmfile /usr/local/bin/helmfile
-	@helmfile --version
-
-helmfile-setup: helmfile-install ## Install helmfile + the helm-diff plugin and verify against the K3s cluster (opt-in)
-	@helm plugin list | grep -q '^diff' || helm plugin install --keyring keys/helm-diff.gpg https://github.com/databus23/helm-diff/releases/latest/download/helm-diff-linux-amd64.tgz
-	@helmfile --file apps/k3s/helmfile.yaml list || (echo "helmfile list failed - run 'make kubectl-setup' and confirm 'kubectl get nodes' is Ready" && exit 1)
-	@echo "helmfile ready. Try: make apps-diff"
+# helmfile implements `apply` as diff-then-sync, so helm-diff is required for
+# `make apps`, not just `make apps-diff`. Helm 4 refuses plugins installed from a
+# git URL and tarballs with no key to verify against, hence --keyring.
+helm-diff: ## Install the helm-diff plugin and verify it against the K3s cluster
+	@$(HELM) plugin list | grep -q '^diff' || $(HELM) plugin install --keyring $(HELM_DIFF_KEYRING) https://github.com/databus23/helm-diff/releases/latest/download/helm-diff-linux-amd64.tgz
+	@$(HELMFILE) --file apps/k3s/helmfile.yaml list || (echo "helmfile list failed - run 'make kubectl-config' and confirm 'kubectl get nodes' is Ready" && exit 1)
+	@echo "helm-diff ready. Try: make apps-diff"
 
 # ── K3s apps (helmfile) ───────────────────────
 #
 # Everything below acts on apps/k3s/helmfile.yaml. To scope a run to one release,
 # call helmfile directly:
-#   helmfile --file apps/k3s/helmfile.yaml diff  -l name=headlamp
-#   helmfile --file apps/k3s/helmfile.yaml apply -l name=headlamp
+#   mise exec -- helmfile --file apps/k3s/helmfile.yaml diff  -l name=headlamp
+#   mise exec -- helmfile --file apps/k3s/helmfile.yaml apply -l name=headlamp
 
 apps-diff: ## Show what would change for every release in apps/k3s/helmfile.yaml
-	@helmfile --file apps/k3s/helmfile.yaml diff
+	@$(HELMFILE) --file apps/k3s/helmfile.yaml diff
 
 apps: ## Install/upgrade every release in apps/k3s/helmfile.yaml (idempotent)
-	@helmfile --file apps/k3s/helmfile.yaml apply
+	@$(HELMFILE) --file apps/k3s/helmfile.yaml apply
 	@echo ""
 	@echo "Headlamp:   https://dashboard.k3s.internal (token: make headlamp-token)"
 	@echo "Grafana:    https://grafana.k3s.internal    (user: admin, password: make monitoring-password)"
 	@echo "Prometheus: https://grafana-prometheus.k3s.internal"
 
 apps-list: ## List the releases declared in apps/k3s/helmfile.yaml
-	@helmfile --file apps/k3s/helmfile.yaml list
+	@$(HELMFILE) --file apps/k3s/helmfile.yaml list
 
 apps-destroy: ## Uninstall every release in apps/k3s/helmfile.yaml (leaves monitoring PVCs behind)
-	@helmfile --file apps/k3s/helmfile.yaml destroy
+	@$(HELMFILE) --file apps/k3s/helmfile.yaml destroy
 	@echo "note: the monitoring PVCs come from StatefulSet volumeClaimTemplates, so they survive uninstall."
 	@echo "      Reclaim them with: kubectl delete pvc -n monitoring --all"
 
 headlamp-token: ## Print a Headlamp login token (ServiceAccount headlamp-admin)
-	@kubectl create token headlamp-admin -n headlamp --duration=24h
+	@$(KUBECTL) create token headlamp-admin -n headlamp --duration=24h
 
 monitoring-password: ## Print the generated Grafana admin password
-	@kubectl get secret monitoring-grafana -n monitoring \
+	@$(KUBECTL) get secret monitoring-grafana -n monitoring \
 		-o jsonpath='{.data.admin-password}' | base64 -d; echo
 
 clean: ## Remove venv

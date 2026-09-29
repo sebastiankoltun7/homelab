@@ -14,19 +14,24 @@ Proxmox VE homelab managed with Terraform and Ansible. Single `make all` provisi
 ## Quick Start
 
 ```bash
-make setup                                          # venv + config templates
+make setup                                          # mise toolchain + venv + config templates
 # Edit terraform/terraform.tfvars with Proxmox credentials
 # Edit ansible/group_vars/all/vault.yml with secrets
 make all                                            # full deployment
 ```
 
-`make setup` creates `ansible/.venv` (with `ansible-core`, `paramiko`, `proxmoxer`, `requests`), installs collections, and copies `vault.yml` / `terraform.tfvars` from templates if missing. Activate the venv with `source ansible/.venv/bin/activate` if you want to run `ansible-playbook` directly.
+`make setup` runs `make tools` (`mise install` for the versions pinned in [`.mise.toml`](.mise.toml)),
+creates `ansible/.venv` (with `ansible-core`, `paramiko`, `proxmoxer`, `requests`) from the pinned
+Python, installs collections, and copies `vault.yml` / `terraform.tfvars` from templates if missing.
+Activate the venv with `source ansible/.venv/bin/activate` if you want to run `ansible-playbook`
+directly.
 
 ## Commands
 
 ```bash
 make help                # list all targets
-make setup               # venv + collections + config templates
+make setup               # mise toolchain + venv + collections + config templates
+make tools               # install the toolchain pinned in .mise.toml
 make tf-init             # initialize Terraform
 make tf-plan             # preview infrastructure
 make tf-apply            # apply infrastructure
@@ -42,13 +47,8 @@ make ansible-dry-run     # check mode all playbooks
 make ssh-cleanup         # remove stale SSH host keys (.100, .102, .104)
 make ssh-accept-keys     # accept SSH host keys (.100, .102, .104)
 make docker-context      # remote Docker context setup (DOCKER_USER ?= skoltun)
-make kubectl-install     # install kubectl (Linux amd64, stable)
-make kubectl-config      # configure kubeconfig from fetched k3s.yaml (127.0.0.1 -> 192.168.1.104)
-make kubectl-setup       # full local kubectl setup (install + kubeconfig, opt-in)
-make helm-install        # install Helm CLI (official installer, prompts for sudo)
-make helm-setup          # install Helm + verify against the K3s cluster (opt-in)
-make helmfile-install    # install helmfile CLI (SHA256-verified release tarball; prompts for sudo)
-make helmfile-setup      # install helmfile + the helm-diff plugin, verified against the cluster (opt-in)
+make kubectl-config      # wire ~/.kube/config from the fetched k3s.yaml (127.0.0.1 -> 192.168.1.104)
+make helm-diff           # install the helm-diff plugin, verified against the cluster
 make apps-diff           # show what would change for every release in apps/k3s/helmfile.yaml
 make apps                # install/upgrade every release in apps/k3s/helmfile.yaml (idempotent)
 make apps-list           # list the releases declared in apps/k3s/helmfile.yaml
@@ -58,7 +58,11 @@ make monitoring-password # print the generated Grafana admin password
 make clean               # remove venv
 ```
 
-> `make all` runs `ansible-pve` → `tf-init` → `tf-apply` → `ansible-pve-host` → `ansible-all` (adguard + docker + plex + k3s). Manual `make ansible-*` runs also accept keys automatically (`ssh-accept-keys` covers .100, .102, .104). After K3s, run `make kubectl-setup` (opt-in) to install `kubectl` and wire `~/.kube/config`; add `make helmfile-setup` to deploy charts to the cluster.
+> `make all` runs `ansible-pve` → `tf-init` → `tf-apply` → `ansible-pve-host` → `ansible-all` (adguard + docker + plex + k3s). Manual `make ansible-*` runs also accept keys automatically (`ssh-accept-keys` covers .100, .102, .104). After K3s, run `make kubectl-config` to wire `~/.kube/config` and `make helm-diff` before `make apps`.
+
+`kubectl`, `helm`, `helmfile`, `terraform` and `python` are not installed by the Makefile — they are
+pinned in [`.mise.toml`](.mise.toml) and every target invokes them through `mise exec`, so the
+versions in that file are the ones that run. See [Prerequisites](#prerequisites).
 
 ## Infrastructure
 
@@ -71,7 +75,7 @@ make clean               # remove venv
 | k3s | VM (Ubuntu 24.04) | 192.168.1.104 | K3s single-node (Traefik + Flannel, `terraform/modules/k3s_vm`) |
 | gateway | Router | 192.168.1.1 | Network gateway |
 
-Subnet: `192.168.1.0/24` · Tags: `management-plane` + `role-adguard`/`role-docker`/`role-plex`/`role-k3s`. See [Local Network Setup](docs/network-setup.md) for DHCP/DNS details. K3s kubeconfig is fetched to `ansible/playbooks/files/k3s.yaml` and wired locally via `make kubectl-setup`.
+Subnet: `192.168.1.0/24` · Tags: `management-plane` + `role-adguard`/`role-docker`/`role-plex`/`role-k3s`. See [Local Network Setup](docs/network-setup.md) for DHCP/DNS details. K3s kubeconfig is fetched to `ansible/playbooks/files/k3s.yaml` and wired locally via `make kubectl-config`.
 
 ## Apps
 
@@ -93,12 +97,28 @@ See [Apps](apps/README.md) for how to add, deploy, scope, and retire either kind
 
 ## Prerequisites
 
+- [mise](https://mise.jdx.dev/getting-started.html) — the only tool you install yourself. It manages
+  everything else from [`.mise.toml`](.mise.toml); `make tools` runs `mise install` for you.
 - Proxmox VE host reachable at `192.168.1.100:8006`
-- Terraform >= 1.0, Python >= 3.12, Make, OpenSSH, Docker >= 24.0
+- Make, OpenSSH, and Docker >= 24.0 (Docker is not managed by mise — it is the runtime on the
+  Docker VM, not a local CLI dependency)
 - Ansible Core >= 2.14 — installed into `ansible/.venv` by `make setup`, no global install needed
-- For the K3s apps: kubectl, Helm, helmfile + the `helm-diff` plugin. `make kubectl-setup`,
-  `make helm-setup` and `make helmfile-setup` install and verify all three; each prompts for
-  sudo, so run them from a terminal. Or install them with `brew` / `apt` and skip the targets.
+
+Pinned in [`.mise.toml`](.mise.toml) and installed by `make tools`:
+
+| Tool | Version |
+|------|---------|
+| Python | 3.12 |
+| Terraform | 1.16 |
+| kubectl | 1.37.1 |
+| Helm | 4.3.0 |
+| helmfile | 1.8.0 |
+
+`make kubectl-config` wires `~/.kube/config` and fails if the cluster is unreachable; `make helm-diff`
+installs the mandatory `helm-diff` plugin and verifies cluster access. Neither needs sudo.
+
+To use a different tool version, edit `.mise.toml` (or `mise use helm@3.22.0`) and re-run
+`make tools`.
 
 Versions tested: Terraform 1.16.x, kubectl `v1.37.1` against server `v1.36.4+k3s1`, Helm `v4.3.0`,
 helmfile `1.8.0`, helm-diff `3.15.15`.

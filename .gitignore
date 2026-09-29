@@ -34,3 +34,6 @@ Desktop.ini
 
 # --- Local output ---
 /ansible/playbooks/files/
+
+#Helm diff
+keys/*

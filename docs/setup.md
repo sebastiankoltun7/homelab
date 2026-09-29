@@ -4,25 +4,39 @@ Step-by-step setup for the homelab from scratch. For deploying apps, see [Apps](
 
 ## Prerequisites
 
-Most tools install through the Makefile. Each target that writes to `/usr/local/bin` prompts for
-sudo, so run them from a terminal.
+[mise](https://mise.jdx.dev/getting-started.html) is the only tool installed by hand. Everything
+else the CLI needs is pinned in [`.mise.toml`](../.mise.toml) and installed by `make tools`
+(`mise install`) — no `brew`, no `apt`, no `sudo mv` into `/usr/local/bin`.
 
-| Tool | Make target | Manual alternative |
+| Tool | Version | Installed by |
 | --- | --- | --- |
-| Terraform | — | `brew install terraform`, apt, `choco install terraform` |
-| Ansible | `make setup` (creates `ansible/.venv`) | `pip install ansible-core` |
-| Docker | — | `brew install --cask docker`, `apt install docker.io` |
-| Python 3.12+ | `make setup` | `brew install python@3.12` |
-| Make, OpenSSH | — | preinstalled on macOS/Linux |
-| kubectl | `make kubectl-setup` | `brew install kubectl` |
-| Helm | `make helm-setup` | `brew install helm` |
-| helmfile + helm-diff | `make helmfile-setup` | `brew install helmfile` |
+| mise | any recent | manual, once |
+| Python | 3.12 | `make tools` |
+| Terraform | 1.16 | `make tools` |
+| kubectl | 1.37.1 | `make tools` |
+| Helm | 4.3.0 | `make tools` |
+| helmfile | 1.8.0 | `make tools` |
+| Ansible | 2.14+ | `make setup` (creates `ansible/.venv`) |
 
-`make kubectl-setup` also copies the kubeconfig into `~/.kube/config`; `make helm-setup` and
-`make helmfile-setup` verify cluster access and fail if the cluster is unreachable.
+`make tools` prints the resolved version of each tool, so it doubles as a verification step. Every
+Makefile target invokes the CLI through `mise exec`, so the versions in `.mise.toml` are used even
+in a shell where `mise activate` never ran.
 
-`make helmfile-setup` installs the mandatory `helm-diff` plugin from a release tarball, verified
-against `keys/helm-diff.gpg` committed in this repo. Helm 4 requires that: it refuses plugins
+Not managed here: Docker (it is the runtime on the Docker VM, not a local CLI dependency), Make and
+OpenSSH (preinstalled on macOS/Linux), and the `helm-diff` Helm plugin.
+
+Two targets remain because they configure local state rather than installing binaries:
+
+```bash
+make kubectl-config    # copies the playbook-fetched kubeconfig to ~/.kube/config
+make helm-diff         # installs the mandatory helm-diff plugin
+```
+
+`make kubectl-config` also patches the server address, and both targets fail if the cluster is
+unreachable.
+
+`make helm-diff` installs `helm-diff` from a release tarball, verified against
+`keys/helm-diff.gpg` committed in this repo. Helm 4 requires that: it refuses plugins
 installed from a git URL, and refuses tarballs whose signing key is not in a keyring.
 
 Tested versions: Terraform 1.16.x, kubectl `v1.37.1` against server `v1.36.4+k3s1`, Helm `v4.3.0`,
@@ -30,8 +44,8 @@ helmfile `1.8.0`, helm-diff `3.15.15`.
 
 > **Helm 4 vs 3:** Helm 4 defaults to server-side apply for *new* releases and renames
 > `--atomic` → `--rollback-on-failure` and `--force` → `--force-replace`. Releases created by
-> Helm 3 keep client-side apply after an upgrade. If a chart misbehaves, pin with
-> `make helm-install HELM_VERSION=v3.22.0`.
+> Helm 3 keep client-side apply after an upgrade. If a chart misbehaves, pin Helm 3 in
+> `.mise.toml` (`mise use helm@3.22.0`) and re-run `make tools`.
 
 ## Proxmox Setup
 
@@ -61,9 +75,10 @@ ssh root@192.168.1.100                              # should not prompt
 make setup
 ```
 
-Creates `ansible/.venv` with the Python dependencies, installs the pinned collections
-(`make ansible-install`), and copies config templates if missing: `terraform/terraform.tfvars` and
-`ansible/group_vars/all/vault.yml`. Activate the venv to run `ansible-playbook` directly:
+Runs `make tools` (mise installs the pinned toolchain), creates `ansible/.venv` with the Python
+dependencies, installs the pinned collections (`make ansible-install`), and copies config templates
+if missing: `terraform/terraform.tfvars` and `ansible/group_vars/all/vault.yml`. Activate the venv
+to run `ansible-playbook` directly:
 
 ```bash
 source ansible/.venv/bin/activate
@@ -144,12 +159,12 @@ On a **fresh** deployment, shift the shared template resource address first (the
 terraform state mv 'module.adguard_home.module.adguard_lxc.proxmox_virtual_environment_file.debian_template' 'module.adguard_home.module.adguard_lxc.proxmox_virtual_environment_file.debian_template[0]'
 ```
 
-Then wire the local tools (each prompts for sudo):
+Then wire the local tools:
 
 ```bash
-make kubectl-setup    # kubectl + ~/.kube/config
-make helmfile-setup   # helmfile + helm-diff, verified against the cluster
-make apps             # deploy everything in apps/k3s/helmfile.yaml
+make kubectl-config    # ~/.kube/config from the fetched k3s.yaml
+make helm-diff         # helm-diff plugin, verified against the cluster
+make apps              # deploy everything in apps/k3s/helmfile.yaml
 ```
 
 Claim Plex once from a browser at `http://192.168.1.103:32400/web` and point a library at
@@ -162,14 +177,17 @@ docker info                              # Docker VM is up
 nslookup google.com 192.168.1.101        # AdGuard resolving
 ssh root@192.168.1.103 "findmnt /PlexMedia && ls /dev/dri"   # Plex mounts
 kubectl get nodes                        # K3s Ready
-helmfile --file apps/k3s/helmfile.yaml diff   # empty == cluster matches the state file
+helmfile diff -f apps/k3s/helmfile.yaml  # empty == cluster matches the state file
 ```
+
+Run the `kubectl` and `helmfile` commands through mise (`mise exec -- ...`) if your shell has not
+activated it, or use the `make` targets, which always do.
 
 The empty helmfile diff is the useful health check: it means the running releases are exactly what
 the state file declares, so `make apps` will be a no-op. Anything else means either the state file
 drifted or something changed the cluster outside Helm — read the diff before applying.
 
-`make kubectl-setup` handles the kubeconfig properly: the playbook fetches it to
+`make kubectl-config` handles the kubeconfig properly: the playbook fetches it to
 `ansible/playbooks/files/k3s.yaml` (gitignored) with `server: https://127.0.0.1:6443`, and the
 target patches that to the LAN IP before copying it to `~/.kube/config` with mode 600. Prefer it
 over editing the file by hand.
@@ -224,16 +242,18 @@ make ssh-cleanup     # clear stale keys for .100, .102, .104
 
 ### Helm / helmfile
 
-- **`sudo: a terminal is required to read the password`** — the install targets shell out to `sudo`
-  for the move into `/usr/local/bin`. Run from a terminal, or install the binary yourself into
-  `~/.local/bin` and put it on `PATH`. Not usable from CI as written.
+- **`mise: not found`** — only mise itself is installed by hand. See
+  [mise.jdx.dev/getting-started](https://mise.jdx.dev/getting-started.html).
+- **`unknown command "diff" for "helm"`** — the helm-diff plugin is missing. It is not optional:
+  helmfile implements `apply` as diff-then-sync, so `make apps` needs it too. Run `make helm-diff`.
 - **`Kubernetes cluster unreachable` / `x509: certificate signed by unknown authority`** — Helm and
   helmfile read the same `~/.kube/config` as kubectl. Fix the kubeconfig first.
-- **`diff: command not found`** — helm-diff is missing; `make apps` needs it too, since helmfile
-  implements `apply` through it. Run `make helmfile-setup`.
 - **`plugin verification failed: open .../pubring.gpg`** — Helm 4 found no key to verify the plugin
-  against. `make helmfile-setup` passes `keys/helm-diff.gpg` via `--keyring`; if you install by
+  against. `make helm-diff` passes `keys/helm-diff.gpg` via `--keyring`; if you install by
   hand, pass it too.
+- **A different tool version than `.mise.toml` says** — something earlier on `PATH` is shadowing it.
+  The `make` targets are immune because they call `mise exec`; a bare `terraform` or `helm` in your
+  shell is not, if that shell never ran `mise activate`.
 - **Chart `kubeVersion` rejected** — a hard failure, not a warning. Pin a chart version compatible
   with `v1.36.4+k3s1`.
 - **`cannot be imported into the current release`** — Helm will not adopt resources that were

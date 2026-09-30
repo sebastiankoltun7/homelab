@@ -54,9 +54,9 @@ resource "proxmox_virtual_environment_firewall_options" "container_options" {
   log_level_out = "info"
 }
 
-# For VMs (Docker)
+# For VMs (Docker: 102, K3s: 104)
 resource "proxmox_virtual_environment_firewall_options" "vm_options" {
-  for_each = toset(["101"])
+  for_each = toset(["102", "104"])
 
   node_name = "pve"
   vm_id     = tonumber(each.key)

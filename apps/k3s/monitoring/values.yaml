@@ -1,5 +1,5 @@
 # kube-prometheus-stack: Prometheus + Grafana + Alertmanager + node-exporter.
-# Deployed by `make apps`; chart version pinned in apps/k3s/helmfile.yaml.
+# Deployed by `mise run apps`; chart version pinned in apps/k3s/helmfile.yaml.
 # Hostnames resolve via the *.k3s.internal wildcard (role_adguard.yml:30).
 
 # This node has 8.2Gi total allocatable storage and local-path cannot expand

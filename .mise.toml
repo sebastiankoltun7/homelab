@@ -4,3 +4,379 @@ terraform = "1.16"
 kubectl = "1.37.1"
 helm = "4.3.0"
 helmfile = "1.8.0"
+bitwarden = "latest"
+
+[env]
+ANSIBLE_DIR = "ansible"
+TERRAFORM_DIR = "terraform"
+APPS_DIR = "apps/k3s"
+HELMFILE_PATH = "{{env.APPS_DIR}}/helmfile.yaml"
+DOCKER_USER = "skoltun"
+DOCKER_HOST_IP = "192.168.1.102"
+PROXMOX_HOST_IP = "192.168.1.100"
+K3S_HOST_IP = "192.168.1.104"
+KUBECONFIG_SRC = "{{env.ANSIBLE_DIR}}/playbooks/files/k3s.yaml"
+HELM_DIFF_KEYRING = "keys/helm-diff.gpg"
+BW_SSH_ITEM = "homelab-ssh-key"
+BW_TF_ITEM = "hcp-terraform-token"
+
+# ── Setup ──────────────────────────────────────
+
+[tasks.setup]
+description = "Full local setup"
+depends = ["tools", "install-docker-local", "ssh-key", "terraform-auth", "ansible-install", "vault-create", "terraform-tfvars"]
+run = """
+cat << 'EOF'
+
+Setup complete! Edit the following files with your values:
+- {{env.TERRAFORM_DIR}}/terraform.tfvars        (Proxmox credentials)
+- {{env.ANSIBLE_DIR}}/group_vars/all/vault.yml  (Secrets)
+
+Then run 'mise run all' for the full deployment, then 'mise run headlamp-token' and
+'mise run monitoring-password' to log in to Headlamp and Grafana.
+EOF
+"""
+
+[tasks.tools]
+description = "Install the toolchain pinned in .mise.toml"
+run = """
+mise install
+terraform version | head -1
+kubectl version --client | head -1
+helm version --short
+helmfile --version
+"""
+
+[tasks."setup-venv"]
+description = "Create ansible/.venv from the pinned Python and install dependencies"
+run = """
+python -m venv {{env.ANSIBLE_DIR}}/.venv
+{{env.ANSIBLE_DIR}}/.venv/bin/pip install --upgrade pip -q
+{{env.ANSIBLE_DIR}}/.venv/bin/pip install ansible-core paramiko proxmoxer requests -q
+echo "Virtual environment ready at {{env.ANSIBLE_DIR}}/.venv"
+"""
+
+[tasks."vault-create"]
+description = "Create vault.yml from template (skip if exists)"
+run = """
+if [ -f {{env.ANSIBLE_DIR}}/group_vars/all/vault.yml ]; then
+    echo "vault.yml exists, skipping."
+else
+    mkdir -p {{env.ANSIBLE_DIR}}/group_vars/all
+    cp {{env.ANSIBLE_DIR}}/vault.yml.template {{env.ANSIBLE_DIR}}/group_vars/all/vault.yml
+    echo "Created vault.yml"
+fi
+"""
+
+[tasks."terraform-tfvars"]
+description = "Create terraform.tfvars from template (skip if exists)"
+run = """
+if [ -f {{env.TERRAFORM_DIR}}/terraform.tfvars ]; then
+    echo "terraform.tfvars exists, skipping."
+else
+    cp {{env.TERRAFORM_DIR}}/terraform.tfvars.template {{env.TERRAFORM_DIR}}/terraform.tfvars
+    echo "Created terraform.tfvars"
+fi
+"""
+
+[tasks."install-docker-local"]
+description = "Install Docker Engine locally on Linux/WSL2"
+run = """
+if command -v docker >/dev/null 2>&1; then
+    echo "Docker is already installed: $(docker --version)"
+else
+    echo "Installing Docker locally..."
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+    rm get-docker.sh
+
+    # Add current user to the docker group so you don't need sudo for docker commands
+    if ! groups | grep -q docker; then
+        echo "Adding $USER to the docker group..."
+        sudo usermod -aG docker $USER
+        echo "Note: If you are on WSL, restart your WSL instance ('wsl --shutdown' from PowerShell) for group changes to apply."
+        echo "Otherwise, log out and back in."
+    fi
+
+    # Enable and start the Docker service (if systemd is available)
+    sudo systemctl enable --now docker 2>/dev/null || sudo service docker start 2>/dev/null || true
+
+    echo "Docker installation complete!"
+    docker --version
+fi
+"""
+
+# ── Terraform ──────────────────────────────────
+
+[tasks."tf-init"]
+description = "Initialize Terraform"
+run = "cd {{env.TERRAFORM_DIR}} && terraform init"
+
+[tasks."tf-plan"]
+description = "Preview infrastructure changes"
+run = "cd {{env.TERRAFORM_DIR}} && terraform plan"
+
+[tasks."tf-apply"]
+description = "Apply infrastructure changes"
+run = "cd {{env.TERRAFORM_DIR}} && terraform apply"
+
+[tasks."tf-destroy"]
+description = "Destroy all infrastructure"
+run = "cd {{env.TERRAFORM_DIR}} && terraform destroy"
+
+# ── Ansible ────────────────────────────────────
+
+[tasks."ansible-install"]
+description = "Install Ansible collections only if requirements.yml changed"
+depends = ["setup-venv"]
+run = """
+if [ ! -f {{env.ANSIBLE_DIR}}/.ansible-deps.stamp ] || [ {{env.ANSIBLE_DIR}}/requirements.yml -nt {{env.ANSIBLE_DIR}}/.ansible-deps.stamp ]; then
+    echo "Requirements changed or first run. Installing Ansible collections..."
+    {{env.ANSIBLE_DIR}}/.venv/bin/ansible-galaxy install -r {{env.ANSIBLE_DIR}}/requirements.yml --force
+    touch {{env.ANSIBLE_DIR}}/.ansible-deps.stamp
+    echo "Ansible collections updated successfully."
+else
+    echo "Ansible collections are already up to date. Skipping."
+fi
+"""
+
+[tasks."ansible-all"]
+description = "Run all playbooks (adguard + docker + plex + k3s)"
+depends = ["ssh-accept-keys"]
+run = [
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_plex.yml",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml"
+]
+
+[tasks."ansible-adguard"]
+description = "Deploy AdGuard Home"
+depends = ["ssh-accept-keys"]
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml"
+
+[tasks."ansible-docker"]
+description = "Deploy Docker host"
+depends = ["ssh-accept-keys"]
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml"
+
+[tasks."ansible-plex"]
+description = "Deploy Plex Media Server"
+depends = ["ssh-accept-keys"]
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_plex.yml"
+
+[tasks."ansible-k3s"]
+description = "Deploy K3s single-node"
+depends = ["ssh-accept-keys"]
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml"
+
+[tasks."ansible-pve"]
+description = "Mount external disks on the Proxmox host"
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_storage.yml"
+
+[tasks."ansible-pve-host"]
+description = "Configure Proxmox host for the plex LXC"
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_host.yml"
+
+[tasks."ansible-dry-run"]
+description = "Dry-run all playbooks"
+run = [
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_storage.yml --check",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_host.yml --check",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml --check",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml --check",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_plex.yml --check",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml --check"
+]
+
+# ── Combined ───────────────────────────────────
+
+[tasks.all]
+description = "Full deployment sequentially (disks, Terraform + Ansible, setup local tools, install k3s apps)"
+run = """
+mise run ansible-install
+mise run ssh-cleanup
+mise run ssh-accept-keys
+mise run terraform-auth
+mise run tf-init
+mise run tf-apply
+mise run wait-for-vms
+mise run ansible-pve
+mise run ansible-pve-host
+mise run ansible-all
+mise run docker-context
+mise run kubectl-config
+mise run helm-diff
+mise run apps
+"""
+
+# ── Utility ────────────────────────────────────
+
+[tasks."ssh-key"]
+description = "Fetch SSH keys from Bitwarden and ensure they are loaded into ssh-agent"
+run = """
+if [ ! -f ~/.ssh/id_ed25519 ]; then
+    echo "Fetching SSH keys from Bitwarden..."
+    command -v bw >/dev/null 2>&1 || { echo "Bitwarden CLI (bw) not found. Run 'mise install' first."; exit 1; }
+
+    if [ -z "$BW_SESSION" ]; then
+        export BW_SESSION="$(bw unlock --raw)"
+    fi
+
+    mkdir -p ~/.ssh
+    chmod 700 ~/.ssh
+
+    bw get item "{{env.BW_SSH_ITEM}}" | jq -r '.sshKey.privateKey' > ~/.ssh/id_ed25519
+    chmod 600 ~/.ssh/id_ed25519
+
+    bw get item "{{env.BW_SSH_ITEM}}" | jq -r '.sshKey.publicKey' > ~/.ssh/id_ed25519.pub
+    chmod 644 ~/.ssh/id_ed25519.pub
+
+    echo "SSH keys successfully imported from Bitwarden."
+else
+    echo "SSH keys already exist locally."
+fi
+
+eval "$(ssh-agent -s)" > /dev/null 2>&1 || true
+if ! ssh-add -l 2>/dev/null | grep -q "id_ed25519"; then
+    ssh-add ~/.ssh/id_ed25519
+    echo "SSH key added to ssh-agent."
+else
+    echo "SSH key is already loaded in ssh-agent."
+fi
+"""
+
+[tasks."terraform-auth"]
+description = "Fetch HCP Terraform token from Bitwarden and configure credentials"
+interactive = true
+run = """
+echo "Configuring HCP Terraform credentials..."
+command -v bw >/dev/null 2>&1 || { echo "Bitwarden CLI (bw) not found. Run 'mise install' first."; exit 1; }
+
+if [ -z "$BW_SESSION" ]; then
+    export BW_SESSION="$(bw unlock --raw)"
+fi
+
+mkdir -p ~/.terraform.d
+
+TF_TOKEN=$(bw list items --search "{{env.BW_TF_ITEM}}" | jq -r '.[0].notes // empty')
+
+if [ -z "$TF_TOKEN" ] || [ "$TF_TOKEN" = "null" ]; then
+    echo "Error: Failed to fetch '{{env.BW_TF_ITEM}}' from Bitwarden or token is empty."
+    exit 1
+fi
+
+cat <<EOF > ~/.terraform.d/credentials.tfrc.json
+{
+  "credentials": {
+    "app.terraform.io": {
+      "token": "$TF_TOKEN"
+    }
+  }
+}
+EOF
+chmod 600 ~/.terraform.d/credentials.tfrc.json
+echo "Terraform credentials configured successfully."
+"""
+
+[tasks."wait-for-vms"]
+description = "Wait for newly provisioned VMs to boot and cloud-init to configure users"
+run = """
+echo "Waiting for VMs (Docker: {{env.DOCKER_HOST_IP}}, K3s: {{env.K3S_HOST_IP}}) to come online..."
+for ip in {{env.DOCKER_HOST_IP}} {{env.K3S_HOST_IP}}; do
+    echo -n "Checking $ip:22..."
+    until timeout 2 bash -c "cat < /dev/null > /dev/tcp/$ip/22" 2>/dev/null; do
+        echo -n "."
+        sleep 5
+    done
+    echo " ONLINE!"
+done
+"""
+
+[tasks."ssh-cleanup"]
+description = "Remove stale SSH host keys for homelab hosts"
+run = """
+ssh-keygen -R {{env.DOCKER_HOST_IP}} 2>/dev/null || true
+ssh-keygen -R {{env.PROXMOX_HOST_IP}} 2>/dev/null || true
+ssh-keygen -R {{env.K3S_HOST_IP}} 2>/dev/null || true
+"""
+
+[tasks."ssh-accept-keys"]
+description = "Accept SSH host keys"
+run = """
+ssh-keyscan -H {{env.DOCKER_HOST_IP}} >> ~/.ssh/known_hosts 2>/dev/null || true
+ssh-keyscan -H {{env.PROXMOX_HOST_IP}} >> ~/.ssh/known_hosts 2>/dev/null || true
+ssh-keyscan -H {{env.K3S_HOST_IP}} >> ~/.ssh/known_hosts 2>/dev/null || true
+"""
+
+[tasks."docker-context"]
+description = "Setup remote Docker context"
+depends = ["ssh-accept-keys"]
+run = """
+docker context create homelab --docker "host=ssh://{{env.DOCKER_USER}}@{{env.DOCKER_HOST_IP}}" 2>/dev/null || docker context update homelab --docker "host=ssh://{{env.DOCKER_USER}}@{{env.DOCKER_HOST_IP}}"
+docker context use homelab
+"""
+
+# ── K3s / helm / helmfile ───────────────────────
+
+[tasks."kubectl-config"]
+description = "Configure kubeconfig from fetched k3s.yaml"
+run = """
+if [ ! -f {{env.KUBECONFIG_SRC}} ]; then
+    echo "Missing {{env.KUBECONFIG_SRC}}. Run 'mise run ansible-k3s' first."
+    exit 1
+fi
+sed -i 's/127\\.0\\.0\\.1/{{env.K3S_HOST_IP}}/g' {{env.KUBECONFIG_SRC}}
+mkdir -p ~/.kube
+cp {{env.KUBECONFIG_SRC}} ~/.kube/config
+chmod 600 ~/.kube/config
+echo "Kubeconfig installed to ~/.kube/config"
+kubectl get nodes || (echo "kubectl get nodes failed" && exit 1)
+"""
+
+[tasks."helm-diff"]
+description = "Install the helm-diff plugin and verify it"
+run = """
+helm plugin list | grep -q '^diff' || helm plugin install --verify=false https://github.com/databus23/helm-diff/releases/latest/download/helm-diff-linux-amd64.tgz
+helmfile --file {{env.HELMFILE_PATH}} list || (echo "helmfile list failed" && exit 1)
+echo "helm-diff ready. Try: mise run apps-diff"
+"""
+
+# ── K3s apps (helmfile) ───────────────────────
+
+[tasks."apps-diff"]
+description = "Show what would change for every release in apps/k3s/helmfile.yaml"
+run = "helmfile --file {{env.HELMFILE_PATH}} diff"
+
+[tasks.apps]
+description = "Install/upgrade every release in apps/k3s/helmfile.yaml"
+run = """
+helmfile --file {{env.HELMFILE_PATH}} apply
+echo ""
+echo "Headlamp:   https://dashboard.k3s.internal (token: mise run headlamp-token)"
+echo "Grafana:    https://grafana.k3s.internal    (user: admin, password: mise run monitoring-password)"
+echo "Prometheus: https://grafana-prometheus.k3s.internal"
+"""
+
+[tasks."apps-list"]
+description = "List the releases declared in apps/k3s/helmfile.yaml"
+run = "helmfile --file {{env.HELMFILE_PATH}} list"
+
+[tasks."apps-destroy"]
+description = "Uninstall every release in apps/k3s/helmfile.yaml"
+run = """
+helmfile --file {{env.HELMFILE_PATH}} destroy
+echo "note: monitoring PVCs survive uninstall. Reclaim with: kubectl delete pvc -n monitoring --all"
+"""
+
+[tasks."headlamp-token"]
+description = "Print a Headlamp login token"
+run = "kubectl create token headlamp-admin -n headlamp --duration=24h"
+
+[tasks."monitoring-password"]
+description = "Print the generated Grafana admin password"
+run = "kubectl get secret monitoring-grafana -n monitoring -o jsonpath='{.data.admin-password}' | base64 -d; echo"
+
+[tasks.clean]
+description = "Remove venv and dependency stamps"
+run = "rm -rf {{env.ANSIBLE_DIR}}/.venv {{env.ANSIBLE_DIR}}/.ansible-deps.stamp"

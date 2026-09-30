@@ -2,11 +2,11 @@
 #
 # Values paths are relative to this file, not the caller's CWD, so
 # `helmfile --file apps/k3s/helmfile.yaml` works from anywhere.
-# Deploy everything with `make apps` (see the Makefile).
+# Deploy everything with `mise run apps` (or your chosen mise task).
 #
-# To retire an app, set its `installed:` to false and run `make apps`: helmfile
+# To retire an app, set its `installed:` to false and run `mise run apps`: helmfile
 # reports it as DELETED in `apps-diff` and uninstalls the release on apply. The
-# entry stays in the file so you can flip it back. `make apps-destroy` removes
+# entry stays in the file so you can flip it back. `mise run apps-destroy` removes
 # everything at once, including entries already marked `installed: false`.
 
 repositories:
@@ -18,9 +18,9 @@ repositories:
 helmDefaults:
   wait: true
   timeout: 600
-  # serverSide is deliberately unset so Helm 4 keeps following each release's
+  # serverSide is deliberately unset so Helm keeps following each release's
   # recorded apply method. Setting it to "true" would push every resource
-  # through server-side apply on the next `make apps`.
+  # through server-side apply on the next run.
 
 releases:
   - name: headlamp
@@ -28,7 +28,7 @@ releases:
     namespace: headlamp
     createNamespace: true
     chart: headlamp/headlamp
-    # Pinned here; override for a one-off with HEADLAMP_CHART_VERSION=0.44.0 make apps
+    # Pinned here; override for a one-off with HEADLAMP_CHART_VERSION=0.44.0 mise run apps
     version: '{{ env "HEADLAMP_CHART_VERSION" | default "0.45.0" }}'
     values:
       - headlamp/values.yaml
@@ -38,7 +38,8 @@ releases:
     namespace: monitoring
     createNamespace: true
     chart: prometheus-community/kube-prometheus-stack
-    # Pinned here; override for a one-off with MONITORING_CHART_VERSION=91.9.0 make apps
+    # Pinned here; override for a one-off with MONITORING_CHART_VERSION=91.9.0 mise run apps
     version: '{{ env "MONITORING_CHART_VERSION" | default "91.8.1" }}'
+    disableValidation: true
     values:
       - monitoring/values.yaml

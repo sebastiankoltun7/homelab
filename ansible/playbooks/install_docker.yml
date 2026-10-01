@@ -64,9 +64,32 @@
     - name: Configure docker cleanup
       ansible.builtin.include_tasks: ../tasks/docker_cleanup_cron.yml
 
+    - name: Configure Docker daemon options (DNS and Insecure Registries)
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: |
+          {
+            "dns": [
+              "192.168.1.101"
+            ],
+            "insecure-registries": [
+              "docker.registry.internal",
+              "quay.registry.internal",
+              "ghcr.registry.internal",
+              "k8s.registry.internal"
+            ]
+          }
+        mode: "0644"
+      notify: Restart Docker
+
   handlers:
     - name: Restart containerd
       ansible.builtin.systemd:
         name: containerd
         state: restarted
         daemon_reload: true
+
+    - name: Restart Docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted

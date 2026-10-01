@@ -1,0 +1,68 @@
+---
+- name: Deploy Nginx Reverse Proxy
+  hosts: role_docker
+  become: true
+
+  pre_tasks:
+    - name: Ensure Docker service is running before deploying nginx
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+
+    - name: Ensure Docker socket is available
+      ansible.builtin.wait_for:
+        path: /var/run/docker.sock
+        state: present
+        timeout: 10
+
+    - name: Ensure proxy-net network exists
+      community.docker.docker_network:
+        name: proxy-net
+        driver: bridge
+        state: present
+
+  tasks:
+    - name: Ensure nginx project directory exists on data disk
+      ansible.builtin.file:
+        path: "{{ docker_mount_point }}/nginx"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy Nginx Docker Compose configuration
+      ansible.builtin.copy:
+        dest: "{{ docker_mount_point }}/nginx/docker-compose.yml"
+        content: |
+          services:
+            nginx-proxy:
+              image: 'nginxproxy/nginx-proxy:latest'
+              container_name: nginx
+              restart: unless-stopped
+              environment:
+                - TZ=Europe/Warsaw
+              ports:
+                - '80:80'
+                - '5000:80' # Port 5000 bypasses Docker's forced HTTPS on standard ports, forcing plain HTTP for registry pulls
+              volumes:
+                - /var/run/docker.sock:/tmp/docker.sock:ro
+                - nginx_vhost:/etc/nginx/vhost.d
+                - nginx_html:/usr/share/nginx/html
+                - nginx_conf:/etc/nginx/conf.d
+              networks:
+                - proxy-net
+
+          networks:
+            proxy-net:
+              external: true
+
+          volumes:
+            nginx_vhost:
+            nginx_html:
+            nginx_conf:
+        mode: "0644"
+
+    - name: Start Nginx Proxy stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ docker_mount_point }}/nginx"
+        state: present

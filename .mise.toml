@@ -141,11 +141,13 @@ fi
 """
 
 [tasks."ansible-all"]
-description = "Run all playbooks (adguard + docker + plex + k3s)"
+description = "Run all playbooks (adguard + docker + registry + nginx + plex + k3s)"
 depends = ["ssh-accept-keys"]
 run = [
     "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml",
     "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_registry.yml",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_nginx.yml",
     "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_plex.yml",
     "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml"
 ]
@@ -159,6 +161,16 @@ run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_ad
 description = "Deploy Docker host"
 depends = ["ssh-accept-keys"]
 run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml"
+
+[tasks."ansible-nginx"]
+description = "Deploy Nginx reverse proxy"
+depends = ["ssh-accept-keys"]
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_nginx.yml"
+
+[tasks."ansible-registry"]
+description = "Deploy multi-registry offline cache"
+depends = ["ssh-accept-keys"]
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_registry.yml"
 
 [tasks."ansible-plex"]
 description = "Deploy Plex Media Server"
@@ -185,6 +197,8 @@ run = [
     "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_host.yml --check",
     "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml --check",
     "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml --check",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_registry.yml --check",
+    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_nginx.yml --check",
     "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_plex.yml --check",
     "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml --check"
 ]

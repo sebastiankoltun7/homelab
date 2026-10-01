@@ -9,6 +9,8 @@ adguard_admin_username: "{{ admin_username }}"
 adguard_alt_names:
   - "*.docker.internal"
   - "docker.internal"
+  - "*.registry.internal"
+  - "registry.internal"
   - "*.internal"
   - "internal"
   - "*.k8s.internal"
@@ -25,6 +27,9 @@ adguard_dns_rewrites:
     answer: "192.168.1.103"
     enabled: true
   - domain: "*.docker.internal"
+    answer: "{{ adguard_docker_reverse_proxy_ip }}"
+    enabled: true
+  - domain: "*.registry.internal"
     answer: "{{ adguard_docker_reverse_proxy_ip }}"
     enabled: true
   - domain: "*.k3s.internal"

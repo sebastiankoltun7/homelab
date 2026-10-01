@@ -1,0 +1,111 @@
+---
+- name: Deploy Multi-Registry Offline Cache with Nginx Proxy
+  hosts: role_docker
+  become: true
+
+  pre_tasks:
+    - name: Ensure Docker service is running before deploying registry
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+
+    - name: Ensure Docker socket is available
+      ansible.builtin.wait_for:
+        path: /var/run/docker.sock
+        state: present
+        timeout: 10
+
+    - name: Ensure proxy-net network exists
+      community.docker.docker_network:
+        name: proxy-net
+        driver: bridge
+        state: present
+
+  tasks:
+    - name: Ensure registry storage directories exist on data disk
+      ansible.builtin.file:
+        path: "{{ docker_mount_point }}/registry/{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - docker
+        - quay
+        - ghcr
+        - k8s
+
+    - name: Deploy multi-registry cache compose file
+      ansible.builtin.copy:
+        dest: "{{ docker_mount_point }}/registry/docker-compose.yml"
+        content: |
+          services:
+            registry-docker:
+              image: registry:2
+              container_name: registry-docker
+              restart: unless-stopped
+              environment:
+                REGISTRY_PROXY_REMOTEURL: https://registry-1.docker.io
+                REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+                VIRTUAL_HOST: docker.registry.internal
+                VIRTUAL_PORT: 5000
+                HTTPS_METHOD: noredirect
+              volumes:
+                - {{ docker_mount_point }}/registry/docker:/var/lib/registry
+              networks:
+                - proxy-net
+          
+            registry-quay:
+              image: registry:2
+              container_name: registry-quay
+              restart: unless-stopped
+              environment:
+                REGISTRY_PROXY_REMOTEURL: https://quay.io
+                REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+                VIRTUAL_HOST: quay.registry.internal
+                VIRTUAL_PORT: 5000
+                HTTPS_METHOD: noredirect
+              volumes:
+                - {{ docker_mount_point }}/registry/quay:/var/lib/registry
+              networks:
+                - proxy-net
+          
+            registry-ghcr:
+              image: registry:2
+              container_name: registry-ghcr
+              restart: unless-stopped
+              environment:
+                REGISTRY_PROXY_REMOTEURL: https://ghcr.io
+                REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+                VIRTUAL_HOST: ghcr.registry.internal
+                VIRTUAL_PORT: 5000
+                HTTPS_METHOD: noredirect
+              volumes:
+                - {{ docker_mount_point }}/registry/ghcr:/var/lib/registry
+              networks:
+                - proxy-net
+          
+            registry-k8s:
+              image: registry:2
+              container_name: registry-k8s
+              restart: unless-stopped
+              environment:
+                REGISTRY_PROXY_REMOTEURL: https://registry.k8s.io
+                REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+                VIRTUAL_HOST: k8s.registry.internal
+                VIRTUAL_PORT: 5000
+                HTTPS_METHOD: noredirect
+              volumes:
+                - {{ docker_mount_point }}/registry/k8s:/var/lib/registry
+              networks:
+                - proxy-net
+          
+          networks:
+            proxy-net:
+              external: true
+        mode: "0644"
+
+    - name: Start Multi-Registry Cache stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ docker_mount_point }}/registry"
+        state: present

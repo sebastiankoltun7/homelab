@@ -37,11 +37,21 @@ module "k3s" {
   ssh_pub_key       = var.vm_ssh_pub_key
 }
 
+module "artifact_registry" {
+  source      = "./modules/registry_lxc"
+  id          = 105
+  name        = "registry"
+  tags        = ["role-registry"]
+  ip          = "192.168.1.105"
+  ssh_pub_key = var.vm_ssh_pub_key
+}
+
+# -------------------------------------------------------------------------------------------------
 # Enable firewall
 resource "proxmox_virtual_environment_cluster_firewall" "this" {
   enabled = true
 }
-
+# TODO move firewall rules to modules
 # For LXC Containers (AdGuard & Plex)
 resource "proxmox_virtual_environment_firewall_options" "container_options" {
   for_each = toset(["102", "103"])

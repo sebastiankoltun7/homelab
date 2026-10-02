@@ -106,6 +106,10 @@ else
 fi
 """
 
+[tasks."bake-image"]
+description = "Download latest Raspberry Pi OS and prebake with Bitwarden SSH key & cloud-init via Python"
+run = "python3 scripts/raspberry/bake-image.py"
+
 # ── Terraform ──────────────────────────────────
 
 [tasks."tf-init"]
@@ -139,10 +143,6 @@ else
     echo "Ansible collections are already up to date. Skipping."
 fi
 """
-
-[tasks."bake-image"]
-description = "Download latest Raspberry Pi OS and prebake with Bitwarden SSH key & cloud-init via Python"
-run = "python3 ansible/bake-image.py"
 
 [tasks."ansible-all"]
 description = "Run all playbooks (adguard + docker + plex + k3s)"

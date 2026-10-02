@@ -5,19 +5,45 @@ import json
 import subprocess
 import tempfile
 import shutil
+import tomllib
 from pathlib import Path
 from string import Template
 
-# Configuration parameters (can be overridden via environment variables)
-IMG = Path("ansible/raspios-lite-arm64.img")
+BASE_DIR = Path(__file__).resolve().parent
+CONFIG_FILE = BASE_DIR / "config.toml"
+TEMPLATE_DIR = BASE_DIR / "templates"
 XZ_URL = "https://downloads.raspberrypi.org/raspios_lite_arm64_latest"
-STATIC_IP = os.getenv("PI_STATIC_IP", "192.168.1.105/24")
-GATEWAY = os.getenv("PI_GATEWAY", "192.168.1.1")
-DNS_SERVERS = os.getenv("PI_DNS", "[1.1.1.1, 8.8.8.8]")
-USERNAME = os.getenv("PI_USER", "skoltun")
-HOSTNAME = os.getenv("PI_HOSTNAME", "raspberry-pi")
-TIMEZONE = os.getenv("PI_TIMEZONE", "Europe/Warsaw")
-TEMPLATE_DIR = Path("ansible/cloud-init")
+
+def load_config():
+    """Load configuration from TOML file with environment variable fallback overrides."""
+    if not CONFIG_FILE.exists():
+        print(f"Error: Configuration file not found at {CONFIG_FILE}")
+        sys.exit(1)
+
+    with open(CONFIG_FILE, "rb") as f:
+        config = tomllib.load(f)
+
+    pi = config.get("pi", {})
+    net = config.get("network", {})
+
+    # If image path is relative, make it resolve from the repo root (2 levels up from scripts/raspberry)
+    repo_root = BASE_DIR.parent.parent
+    img_path_raw = pi.get("image_path", "ansible/raspios-lite-arm64.img")
+    img_path = repo_root / img_path_raw if not Path(img_path_raw).is_absolute() else Path(img_path_raw)
+
+    # Format DNS servers list back to string format for cloud-init template if needed
+    dns_list = net.get("dns_servers", ["1.1.1.1", "8.8.8.8"])
+    dns_str = "[" + ", ".join(dns_list) + "]"
+
+    return {
+        "img": img_path,
+        "username": os.getenv("PI_USER", pi.get("username", "skoltun")),
+        "hostname": os.getenv("PI_HOSTNAME", pi.get("hostname", "raspberry-pi")),
+        "timezone": os.getenv("PI_TIMEZONE", pi.get("timezone", "Europe/Warsaw")),
+        "static_ip": os.getenv("PI_STATIC_IP", net.get("static_ip", "192.168.1.105/24")),
+        "gateway": os.getenv("PI_GATEWAY", net.get("gateway", "192.168.1.1")),
+        "dns_servers": os.getenv("PI_DNS", dns_str),
+    }
 
 def run_cmd(cmd, sudo=False):
     if sudo and os.geteuid() != 0:
@@ -34,8 +60,6 @@ def fetch_ssh_key():
     bw_session = os.environ.get("BW_SESSION")
     if not bw_session:
         print("Bitwarden vault is locked. Please unlock it:")
-        # stdout is captured to grab the session key, but stderr is left uncaptured
-        # so the "Master password:" prompt is visible in your terminal.
         res = subprocess.run(
             ["bw", "unlock", "--raw"],
             stdout=subprocess.PIPE,
@@ -58,9 +82,13 @@ def fetch_ssh_key():
     return pub_key.strip()
 
 def main():
+    cfg = load_config()
+
     # 1. Download and extract image if missing
-    if not IMG.exists():
-        img_xz = IMG.with_suffix(".img.xz")
+    if not cfg["img"].exists():
+        # Ensure parent directory for the image exists
+        cfg["img"].parent.mkdir(parents=True, exist_ok=True)
+        img_xz = cfg["img"].with_suffix(".img.xz")
         print(f"Downloading latest Raspberry Pi OS Lite from official source...")
         run_cmd(["curl", "-L", "-o", str(img_xz), XZ_URL])
         print("Decompressing image...")
@@ -74,14 +102,14 @@ def main():
     try:
         print("Rendering cloud-init configurations...")
         context = {
-            "username": USERNAME,
+            "username": cfg["username"],
             "pub_key": pub_key,
-            "timezone": TIMEZONE,
-            "static_ip": STATIC_IP,
-            "gateway": GATEWAY,
-            "dns_servers": DNS_SERVERS,
-            "instance_id": f"{HOSTNAME}-instance",
-            "hostname": HOSTNAME
+            "timezone": cfg["timezone"],
+            "static_ip": cfg["static_ip"],
+            "gateway": cfg["gateway"],
+            "dns_servers": cfg["dns_servers"],
+            "instance_id": f"{cfg['hostname']}-instance",
+            "hostname": cfg["hostname"]
         }
 
         for filename in ["user-data", "meta-data", "network-config"]:
@@ -93,7 +121,7 @@ def main():
         # 4. Loop-mount image partitions
         print("Loop-mounting raw image partitions...")
         res = subprocess.run(
-            ["sudo", "losetup", "--find", "--show", "-P", str(IMG)],
+            ["sudo", "losetup", "--find", "--show", "-P", str(cfg["img"])],
             capture_output=True, text=True, check=True
         )
         loop_dev = res.stdout.strip()
@@ -101,10 +129,14 @@ def main():
         mnt_dir = temp_dir / "mnt"
         mnt_dir.mkdir()
 
+        root_mnt = temp_dir / "root_mnt"
+        root_mnt.mkdir()
+
         try:
+            # Mount boot partition (p1)
             run_cmd(["mount", f"{loop_dev}p1", str(mnt_dir)], sudo=True)
 
-            # 5. Patch kernel cgroups
+            # Patch kernel cgroups
             cmdline_path = mnt_dir / "cmdline.txt"
             cmdline_content = cmdline_path.read_text()
             if "cgroup_memory=1" not in cmdline_content:
@@ -115,21 +147,39 @@ def main():
                     shell=True, check=True
                 )
 
-            # 6. Copy files to boot partition & enable SSH server
+            # Copy cloud-init files & enable SSH
             print("Injecting configuration files and enabling SSH into boot partition...")
             for filename in ["user-data", "meta-data", "network-config"]:
                 run_cmd(["cp", str(temp_dir / filename), str(mnt_dir / filename)], sudo=True)
-
-            # Raspberry Pi OS requires an empty 'ssh' file in the boot partition to open port 22
             run_cmd(["touch", str(mnt_dir / "ssh")], sudo=True)
 
+            # Mount root partition (p2) to customize system files
+            run_cmd(["mount", f"{loop_dev}p2", str(root_mnt)], sudo=True)
+
+            print("Customizing system files on root partition...")
+            wifi_check_path = root_mnt / "etc" / "profile.d" / "wifi-check.sh"
+            if wifi_check_path.exists():
+                run_cmd(["rm", "-f", str(wifi_check_path)], sudo=True)
+
+            motd_path = root_mnt / "etc" / "motd"
+            custom_motd = (
+                "===================================================\n"
+                f" 🚀 Raspberry Pi Homelab Node [{cfg['hostname']}] -- Zero-Touch\n"
+                "===================================================\n"
+            )
+            subprocess.run(
+                f"sudo tee {motd_path} > /dev/null",
+                input=custom_motd, text=True, shell=True, check=True
+            )
+
         finally:
-            # Cleanup mount and loop device safely
+            # Cleanup mounts and loop device safely
             subprocess.run(["sudo", "umount", str(mnt_dir)], capture_output=True)
+            subprocess.run(["sudo", "umount", str(root_mnt)], capture_output=True)
             subprocess.run(["sudo", "losetup", "-d", loop_dev], capture_output=True)
 
-        print(f"\nSuccess! Prebaked image ready at: {IMG}")
-        print(f"Configured Static IP: {STATIC_IP}")
+        print(f"\nSuccess! Prebaked image ready at: {cfg['img']}")
+        print(f"Configured Static IP: {cfg['static_ip']}")
         print("Flash it to your SD card using Rufus, Balena Etcher, or Raspberry Pi Imager.")
 
     finally:

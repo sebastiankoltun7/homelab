@@ -1,0 +1,14 @@
+#cloud-config
+users:
+  - name: ${username}
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${pub_key}
+package_update: true
+packages:
+  - python3-apt
+  - curl
+timezone: ${timezone}
+chpasswd: { expire: False }
+ssh_pwauth: false

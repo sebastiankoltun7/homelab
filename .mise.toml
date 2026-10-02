@@ -106,6 +106,10 @@ else
 fi
 """
 
+[tasks."bake-image"]
+description = "Download latest Raspberry Pi OS and prebake with Bitwarden SSH key & cloud-init via Python"
+run = "python3 scripts/raspberry/bake-image.py"
+
 # ── Terraform ──────────────────────────────────
 
 [tasks."tf-init"]

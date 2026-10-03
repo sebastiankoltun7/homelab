@@ -1,0 +1,5 @@
+---
+- import_playbook: install_adguard.yml
+- import_playbook: install_plex.yml
+- import_playbook: install_docker.yml
+- import_playbook: install_k3s.yml

@@ -90,17 +90,13 @@ else
     sudo sh get-docker.sh
     rm get-docker.sh
 
-    # Add current user to the docker group so you don't need sudo for docker commands
     if ! groups | grep -q docker; then
         echo "Adding $USER to the docker group..."
         sudo usermod -aG docker $USER
-        echo "Note: If you are on WSL, restart your WSL instance ('wsl --shutdown' from PowerShell) for group changes to apply."
-        echo "Otherwise, log out and back in."
+        echo "Note: If you are on WSL, restart your WSL instance ('wsl --shutdown') for group changes to apply."
     fi
 
-    # Enable and start the Docker service (if systemd is available)
     sudo systemctl enable --now docker 2>/dev/null || sudo service docker start 2>/dev/null || true
-
     echo "Docker installation complete!"
     docker --version
 fi
@@ -147,17 +143,25 @@ fi
 [tasks."ansible-all"]
 description = "Run all playbooks (adguard + docker + plex + k3s)"
 depends = ["ssh-accept-keys"]
-run = [
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_plex.yml",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml"
-]
+run = """
+echo "Fetching Cloudflare token from Bitwarden..."
+CF_TOKEN=$(./scripts/bw-get.sh "Cloudflare token (HomeLab)" ".login.password")
+
+cd {{env.ANSIBLE_DIR}}
+.venv/bin/ansible-playbook playbooks/install_adguard.yml -e "cloudflare_api_token=$CF_TOKEN"
+.venv/bin/ansible-playbook playbooks/install_docker.yml
+.venv/bin/ansible-playbook playbooks/install_plex.yml
+.venv/bin/ansible-playbook playbooks/install_k3s.yml
+"""
 
 [tasks."ansible-adguard"]
-description = "Deploy AdGuard Home"
+description = "Deploy AdGuard Home with Let's Encrypt (fetching token from Bitwarden)"
 depends = ["ssh-accept-keys"]
-run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml"
+run = """
+echo "Fetching Cloudflare token from Bitwarden..."
+CF_TOKEN=$(./scripts/bw-get.sh "Cloudflare token (HomeLab)" ".login.password")
+cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml -e "cloudflare_api_token=$CF_TOKEN"
+"""
 
 [tasks."ansible-docker"]
 description = "Deploy Docker host"
@@ -184,19 +188,21 @@ run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_
 
 [tasks."ansible-dry-run"]
 description = "Dry-run all playbooks"
-run = [
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_storage.yml --check",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_host.yml --check",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml --check",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml --check",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_plex.yml --check",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml --check"
-]
+run = """
+CF_TOKEN=$(./scripts/bw-get.sh "Cloudflare token (HomeLab)" ".login.password" 2>/dev/null || echo "dummy-token")
+cd {{env.ANSIBLE_DIR}}
+.venv/bin/ansible-playbook playbooks/setup_pve_storage.yml --check
+.venv/bin/ansible-playbook playbooks/setup_pve_host.yml --check
+.venv/bin/ansible-playbook playbooks/install_adguard.yml --check -e "cloudflare_api_token=$CF_TOKEN"
+.venv/bin/ansible-playbook playbooks/install_docker.yml --check
+.venv/bin/ansible-playbook playbooks/install_plex.yml --check
+.venv/bin/ansible-playbook playbooks/install_k3s.yml --check
+"""
 
 # ── Combined ───────────────────────────────────
 
 [tasks.all]
-description = "Full deployment sequentially (disks, Terraform + Ansible, setup local tools, install k3s apps)"
+description = "Full deployment sequentially"
 run = """
 mise run ansible-install
 mise run ssh-cleanup
@@ -221,21 +227,13 @@ description = "Fetch SSH keys from Bitwarden and ensure they are loaded into ssh
 run = """
 if [ ! -f ~/.ssh/id_ed25519 ]; then
     echo "Fetching SSH keys from Bitwarden..."
-    command -v bw >/dev/null 2>&1 || { echo "Bitwarden CLI (bw) not found. Run 'mise install' first."; exit 1; }
-
-    if [ -z "$BW_SESSION" ]; then
-        export BW_SESSION="$(bw unlock --raw)"
-    fi
-
+    ITEM_JSON=$(./scripts/bw-get.sh "{{env.BW_SSH_ITEM}}" ".")
     mkdir -p ~/.ssh
     chmod 700 ~/.ssh
-
-    bw get item "{{env.BW_SSH_ITEM}}" | jq -r '.sshKey.privateKey' > ~/.ssh/id_ed25519
+    echo "$ITEM_JSON" | jq -r '.sshKey.privateKey' > ~/.ssh/id_ed25519
     chmod 600 ~/.ssh/id_ed25519
-
-    bw get item "{{env.BW_SSH_ITEM}}" | jq -r '.sshKey.publicKey' > ~/.ssh/id_ed25519.pub
+    echo "$ITEM_JSON" | jq -r '.sshKey.publicKey' > ~/.ssh/id_ed25519.pub
     chmod 644 ~/.ssh/id_ed25519.pub
-
     echo "SSH keys successfully imported from Bitwarden."
 else
     echo "SSH keys already exist locally."
@@ -255,20 +253,8 @@ description = "Fetch HCP Terraform token from Bitwarden and configure credential
 interactive = true
 run = """
 echo "Configuring HCP Terraform credentials..."
-command -v bw >/dev/null 2>&1 || { echo "Bitwarden CLI (bw) not found. Run 'mise install' first."; exit 1; }
-
-if [ -z "$BW_SESSION" ]; then
-    export BW_SESSION="$(bw unlock --raw)"
-fi
-
+TF_TOKEN=$(./scripts/bw-get.sh "{{env.BW_TF_ITEM}}" ".notes")
 mkdir -p ~/.terraform.d
-
-TF_TOKEN=$(bw list items --search "{{env.BW_TF_ITEM}}" | jq -r '.[0].notes // empty')
-
-if [ -z "$TF_TOKEN" ] || [ "$TF_TOKEN" = "null" ]; then
-    echo "Error: Failed to fetch '{{env.BW_TF_ITEM}}' from Bitwarden or token is empty."
-    exit 1
-fi
 
 cat <<EOF > ~/.terraform.d/credentials.tfrc.json
 {
@@ -355,11 +341,25 @@ run = "helmfile --file {{env.HELMFILE_PATH}} diff"
 [tasks.apps]
 description = "Install/upgrade every release in apps/k3s/helmfile.yaml"
 run = """
+echo "Creating Cloudflare API token secret for cert-manager..."
+CF_TOKEN=$(./scripts/bw-get.sh "Cloudflare token (HomeLab)" ".login.password")
+kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic cloudflare-api-token-secret \
+  --namespace=cert-manager \
+  --from-literal=api-token="$CF_TOKEN" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+echo "Applying Helmfile releases (including cert-manager)..."
 helmfile --file {{env.HELMFILE_PATH}} apply
+
+echo "Waiting for cert-manager CRDs to be ready, then applying ClusterIssuer..."
+kubectl wait --for=condition=established --timeout=60s crd/clusterissuers.cert-manager.io 2>/dev/null || sleep 5
+kubectl apply -f apps/k3s/cluster-issuer.yaml
+
 echo ""
-echo "Headlamp:   https://dashboard.k3s.internal (token: mise run headlamp-token)"
-echo "Grafana:    https://grafana.k3s.internal    (user: admin, password: mise run monitoring-password)"
-echo "Prometheus: https://grafana-prometheus.k3s.internal"
+echo "Headlamp:   https://dashboard.k3s.skoltun.dev (token: mise run headlamp-token)"
+echo "Grafana:    https://grafana.k3s.skoltun.dev    (user: admin, password: mise run monitoring-password)"
+echo "Prometheus: https://grafana-prometheus.k3s.skoltun.dev"
 """
 
 [tasks."apps-list"]

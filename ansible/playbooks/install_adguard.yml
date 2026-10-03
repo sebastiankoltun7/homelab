@@ -40,50 +40,45 @@
         state: directory
         mode: '0700'
 
-    - name: Remove stale certificates when regeneration is requested
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - "{{ adguard_cert_directory }}/cert.crt"
-        - "{{ adguard_cert_directory }}/private.key"
-      when: adguard_regenerate_cert | default(false)
+    - name: Install Certbot and Cloudflare DNS plugin
+      ansible.builtin.apt:
+        name:
+          - certbot
+          - python3-certbot-dns-cloudflare
+        state: present
+        update_cache: true
 
-    - name: Create OpenSSL configuration file from template
-      ansible.builtin.template:
-        src: "{{ playbook_dir }}/adguard/openssl.cnf.j2"
-        dest: "{{ adguard_cert_directory }}/openssl.cnf"
-        mode: '0644'
+    - name: Create Cloudflare credentials file for Certbot
+      ansible.builtin.copy:
+        content: "dns_cloudflare_api_token = {{ cloudflare_api_token }}\n"
+        dest: /opt/AdGuardHome/cloudflare.ini
+        mode: '0600'
 
-    - name: Generate self-signed TLS certificate using config file
+    - name: Generate or renew wildcard Let's Encrypt certificate via DNS-01
       ansible.builtin.command:
         cmd: >
-          openssl req -x509 -nodes -days 825 -newkey rsa:2048
-          -keyout {{ adguard_cert_directory }}/private.key
-          -out {{ adguard_cert_directory }}/cert.crt
-          -config {{ adguard_cert_directory }}/openssl.cnf
-        creates: "{{ adguard_cert_directory }}/cert.crt"
+          certbot certonly --dns-cloudflare
+          --dns-cloudflare-credentials /opt/AdGuardHome/cloudflare.ini
+          -d skoltun.dev
+          -d "*.skoltun.dev"
+          --non-interactive --agree-tos -m admin@skoltun.dev
+          --force-renewal
 
-    - name: Harden private key permissions
-      ansible.builtin.file:
-        path: "{{ adguard_cert_directory }}/private.key"
+    - name: Copy fullchain certificate to AdGuard cert directory
+      ansible.builtin.copy:
+        src: /etc/letsencrypt/live/skoltun.dev/fullchain.pem
+        dest: "{{ adguard_cert_directory }}/cert.crt"
+        remote_src: true
+        mode: '0644'
+
+    - name: Copy private key to AdGuard cert directory
+      ansible.builtin.copy:
+        src: /etc/letsencrypt/live/skoltun.dev/privkey.pem
+        dest: "{{ adguard_cert_directory }}/private.key"
+        remote_src: true
         mode: '0600'
         owner: root
         group: root
-
-    - name: Ensure local playbook certificate directory exists
-      ansible.builtin.file:
-        path: "{{ playbook_dir }}/files"
-        state: directory
-        mode: '0700'
-      delegate_to: localhost
-      run_once: true
-
-    - name: Fetch certificate to local playbook directory
-      ansible.builtin.fetch:
-        src: "{{ adguard_cert_directory }}/cert.crt"
-        dest: "{{ playbook_dir }}/files/cert.crt"
-        flat: true
 
     - name: Deploy AdGuardHome.yaml
       ansible.builtin.template:

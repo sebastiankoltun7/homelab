@@ -1,5 +1,5 @@
 # Homelab
-<p align="left">
+<p>
   <img src="https://img.shields.io/badge/Gitleaks-Protected-brightgreen?style=flat-square&logo=git" alt="Gitleaks" />
   <img src="https://img.shields.io/badge/Trivy-Scanned-blue?style=flat-square&logo=security" alt="Trivy" />
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License" />
@@ -123,10 +123,10 @@ mise run monitoring-password  # generated Grafana admin password
 
 | Service | URL | Login |
 |---------|-----|-------|
-| Headlamp | `https://dashboard.k3s.internal` | paste the `headlamp-token` output |
-| Grafana | `https://grafana.k3s.internal` | user `admin`, password from `monitoring-password` |
-| Prometheus | `https://grafana-prometheus.k3s.internal` | none |
-| AdGuard Home | `https://adguard.internal` | `admin_username` + password from `vault.yml` |
+| Headlamp | `https://dashboard.k3s.skoltun.dev` | paste the `headlamp-token` output |
+| Grafana | `https://grafana.k3s.skoltun.dev` | user `admin`, password from `monitoring-password` |
+| Prometheus | `https://grafana-prometheus.k3s.skoltun.dev` | none |
+| AdGuard Home | `https://adguard.skoltun.dev` | `admin_username` + password from `vault.yml` |
 | Plex | `http://192.168.1.103:32400/web` | claim once, then your Plex account |
 
 `mise run all` ends with `mise run apps`, which prints the first three URLs together with the tasks
@@ -161,7 +161,7 @@ Subnet: `192.168.1.0/24` · Tags: `management-plane` + `role-adguard`/`role-dock
 Two mechanisms, no others:
 
 - **Docker Compose** on the Docker VM — add `apps/docker/<name>/docker-compose.yml`, attached to the
-  external `proxy-net` bridge, routed by `VIRTUAL_HOST` under the `*.docker.internal` wildcard.
+  external `proxy-net` bridge, routed by `VIRTUAL_HOST` under the `*.docker.skoltun.dev` wildcard.
 - **Helmfile** on K3s — add a release to `apps/k3s/helmfile.yaml` with overrides in
   `apps/k3s/<name>/values.yaml`, then `mise run apps`.
 

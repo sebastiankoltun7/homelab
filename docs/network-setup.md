@@ -100,7 +100,7 @@ sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
 
 ## Trusting the AdGuard TLS certificate
 
-AdGuard Home serves its admin dashboard over `https://adguard.internal`. Because the certificate is self-signed (no public CA), browsers will warn "Your connection is not private" until you install it as a trusted certificate.
+AdGuard Home serves its admin dashboard over `https://adguard.skoltun.dev`. Because the certificate is self-signed (no public CA), browsers will warn "Your connection is not private" until you install it as a trusted certificate.
 
 The Ansible playbook (`ansible/playbooks/install_adguard.yml:52`) generates the certificate and fetches a copy to `ansible/playbooks/files/cert.crt` (gitignored via `.gitignore:35`). Install/trust that file on any machine that should open the dashboard over HTTPS without warnings:
 
@@ -141,7 +141,7 @@ sudo update-ca-certificates
 Then add the hostname to `/etc/hosts` if you don't use AdGuard as your DNS server:
 
 ```
-192.168.1.101 adguard.internal
+192.168.1.101 adguard.skoltun.dev
 ```
 
 Fedora/RHEL:
@@ -179,7 +179,7 @@ sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keyc
 ### Verifying
 
 ```bash
-curl --cacert ansible/playbooks/files/cert.crt https://adguard.internal
+curl --cacert ansible/playbooks/files/cert.crt https://adguard.skoltun.dev
 curl --cacert ansible/playbooks/files/cert.crt https://192.168.1.101
 ```
 
@@ -190,17 +190,17 @@ If either returns the AdGuard dashboard HTML (not a TLS error), the certificate 
 ```bash
 # Test resolution against AdGuard
 nslookup google.com 192.168.1.101
-nslookup adguard.internal 192.168.1.101
-nslookup app.docker.internal 192.168.1.101  # docker apps: *.docker.internal → 192.168.1.102 (ansible/group_vars/role_adguard.yml:20)
+nslookup adguard.skoltun.dev 192.168.1.101
+nslookup app.docker.skoltun.dev 192.168.1.101  # docker apps: *.docker.skoltun.dev → 192.168.1.102 (ansible/group_vars/role_adguard.yml:20)
 
 # Test from Linux/Mac
 dig @192.168.1.101 google.com
-dig @192.168.1.101 adguard.internal
-dig @192.168.1.101 app.docker.internal
+dig @192.168.1.101 adguard.skoltun.dev
+dig @192.168.1.101 app.docker.skoltun.dev
 
 # Check AdGuard dashboard
 open http://192.168.1.101
-open https://adguard.internal   # after trusting the cert
+open https://adguard.skoltun.dev   # after trusting the cert
 ```
 
 Verify queries appear in AdGuard's query log after visiting an ad-heavy site.
@@ -241,7 +241,7 @@ Configure in AdGuard dashboard (Settings > DNS settings):
 
 **Check:**
 - HTTP address in config: `192.168.1.101:80`
-- HTTPS address in config: `https://adguard.internal` (needs the cert trusted, see above)
+- HTTPS address in config: `https://adguard.skoltun.dev` (needs the cert trusted, see above)
 - LXC container is running in Proxmox
 - No firewall blocking ports 80/443
 
@@ -256,13 +256,13 @@ Configure in AdGuard dashboard (Settings > DNS settings):
 ```bash
 # Linux/Mac - test DNS resolution
 dig @192.168.1.101 google.com
-dig @192.168.1.101 adguard.internal
-dig @192.168.1.101 app.docker.internal  # docker wildcard
+dig @192.168.1.101 adguard.skoltun.dev
+dig @192.168.1.101 app.docker.skoltun.dev  # docker wildcard
 
 # Windows - test DNS resolution
 nslookup google.com 192.168.1.101
-nslookup adguard.internal 192.168.1.101
-nslookup app.docker.internal 192.168.1.101
+nslookup adguard.skoltun.dev 192.168.1.101
+nslookup app.docker.skoltun.dev 192.168.1.101
 
 # Check if port 53 is open
 telnet 192.168.1.101 53

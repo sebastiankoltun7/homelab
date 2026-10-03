@@ -1,6 +1,6 @@
 # kube-prometheus-stack: Prometheus + Grafana + Alertmanager + node-exporter.
 # Deployed by `mise run apps`; chart version pinned in apps/k3s/helmfile.yaml.
-# Hostnames resolve via the *.k3s.internal wildcard (role_adguard.yml:30).
+# Hostnames resolve via the *.k3s.skoltun.dev wildcard (role_adguard.yml:30).
 
 # This node has 8.2Gi total allocatable storage and local-path cannot expand
 # (reclaimPolicy=Delete), so the PVCs below are sized to leave headroom.
@@ -26,7 +26,7 @@ prometheus:
   ingress:
     enabled: true
     ingressClassName: traefik
-    hosts: [grafana-prometheus.k3s.internal]
+    hosts: [grafana-prometheus.k3s.skoltun.dev]
 
   # k3s disables anonymous auth on the kubelet, so the chart's kubelet
   # ServiceMonitor scrapes /metrics and gets HTTP 401 (target stays down, and
@@ -121,11 +121,17 @@ grafana:
     enabled: true
     ingressClassName: traefik
     labels:
-      app.kubernetes.io/part-of: traefik   # shows up in the traefik dashboard
-    hosts: [grafana.k3s.internal]
+      app.kubernetes.io/part-of: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts: [grafana.k3s.skoltun.dev]
+    tls:
+      - secretName: grafana-tls
+        hosts:
+          - grafana.k3s.skoltun.dev
   grafana.ini:
     server:
-      root_url: https://grafana.k3s.internal   # correct links behind the ingress
+      root_url: https://grafana.k3s.skoltun.dev
   env:
     GF_METRICS_ENABLED: "true"   # otherwise the grafana target is connection-refused
   serviceMonitor:

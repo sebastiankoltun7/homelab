@@ -54,7 +54,13 @@
         dest: /opt/AdGuardHome/cloudflare.ini
         mode: '0600'
 
-    - name: Generate or renew wildcard Let's Encrypt certificate via DNS-01
+    - name: Check if Let's Encrypt certificate already exists
+      ansible.builtin.stat:
+        path: /etc/letsencrypt/live/skoltun.dev/fullchain.pem
+      register: le_cert
+
+    - name: Generate wildcard Let's Encrypt certificate via DNS-01
+      when: not le_cert.stat.exists
       ansible.builtin.command:
         cmd: >
           certbot certonly --dns-cloudflare
@@ -62,7 +68,6 @@
           -d skoltun.dev
           -d "*.skoltun.dev"
           --non-interactive --agree-tos -m admin@skoltun.dev
-          --force-renewal
 
     - name: Copy fullchain certificate to AdGuard cert directory
       ansible.builtin.copy:

@@ -7,6 +7,7 @@ helmfile = "1.8.0"
 bitwarden = "latest"
 
 [env]
+PYTHONPATH = "scripts"
 ANSIBLE_DIR = "ansible"
 TERRAFORM_DIR = "terraform"
 APPS_DIR = "apps/k3s"
@@ -19,6 +20,9 @@ KUBECONFIG_SRC = "{{env.ANSIBLE_DIR}}/playbooks/files/k3s.yaml"
 HELM_DIFF_KEYRING = "keys/helm-diff.gpg"
 BW_SSH_ITEM = "homelab-ssh-key"
 BW_TF_ITEM = "hcp-terraform-token"
+BW_CF_ITEM = "Cloudflare token (HomeLab)"
+BW_SCRIPT = "scripts/bitwarden/bitwarden_get.py"
+BAKE_SCRIPT = "scripts/raspberry/bake_image.py"
 
 # ── Setup ──────────────────────────────────────
 
@@ -104,7 +108,7 @@ fi
 
 [tasks."bake-image"]
 description = "Download latest Raspberry Pi OS and prebake with Bitwarden SSH key & cloud-init via Python"
-run = "python3 scripts/raspberry/bake-image.py"
+run = "python3 {{env.BAKE_SCRIPT}}"
 
 # ── Terraform ──────────────────────────────────
 
@@ -145,7 +149,7 @@ description = "Run all playbooks (adguard + docker + plex + k3s)"
 depends = ["ssh-accept-keys"]
 run = """
 echo "Fetching Cloudflare token from Bitwarden..."
-CF_TOKEN=$(./scripts/bw-get.sh "Cloudflare token (HomeLab)" ".login.password")
+CF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_CF_ITEM}}" ".login.password")
 
 cd {{env.ANSIBLE_DIR}}
 .venv/bin/ansible-playbook playbooks/install_adguard.yml -e "cloudflare_api_token=$CF_TOKEN"
@@ -159,7 +163,7 @@ description = "Deploy AdGuard Home with Let's Encrypt (fetching token from Bitwa
 depends = ["ssh-accept-keys"]
 run = """
 echo "Fetching Cloudflare token from Bitwarden..."
-CF_TOKEN=$(./scripts/bw-get.sh "Cloudflare token (HomeLab)" ".login.password")
+CF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_CF_ITEM}}" ".login.password")
 cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml -e "cloudflare_api_token=$CF_TOKEN"
 """
 
@@ -189,7 +193,7 @@ run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_
 [tasks."ansible-dry-run"]
 description = "Dry-run all playbooks"
 run = """
-CF_TOKEN=$(./scripts/bw-get.sh "Cloudflare token (HomeLab)" ".login.password" 2>/dev/null || echo "dummy-token")
+CF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_CF_ITEM}}" ".login.password" 2>/dev/null || echo "dummy-token")
 cd {{env.ANSIBLE_DIR}}
 .venv/bin/ansible-playbook playbooks/setup_pve_storage.yml --check
 .venv/bin/ansible-playbook playbooks/setup_pve_host.yml --check
@@ -227,7 +231,7 @@ description = "Fetch SSH keys from Bitwarden and ensure they are loaded into ssh
 run = """
 if [ ! -f ~/.ssh/id_ed25519 ]; then
     echo "Fetching SSH keys from Bitwarden..."
-    ITEM_JSON=$(./scripts/bw-get.sh "{{env.BW_SSH_ITEM}}" ".")
+    ITEM_JSON=$(python3 {{env.BW_SCRIPT}} "{{env.BW_SSH_ITEM}}" ".")
     mkdir -p ~/.ssh
     chmod 700 ~/.ssh
     echo "$ITEM_JSON" | jq -r '.sshKey.privateKey' > ~/.ssh/id_ed25519
@@ -253,7 +257,7 @@ description = "Fetch HCP Terraform token from Bitwarden and configure credential
 interactive = true
 run = """
 echo "Configuring HCP Terraform credentials..."
-TF_TOKEN=$(./scripts/bw-get.sh "{{env.BW_TF_ITEM}}" ".notes")
+TF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_TF_ITEM}}" ".notes")
 mkdir -p ~/.terraform.d
 
 cat <<EOF > ~/.terraform.d/credentials.tfrc.json
@@ -342,7 +346,7 @@ run = "helmfile --file {{env.HELMFILE_PATH}} diff"
 description = "Install/upgrade every release in apps/k3s/helmfile.yaml"
 run = """
 echo "Creating Cloudflare API token secret for cert-manager..."
-CF_TOKEN=$(./scripts/bw-get.sh "Cloudflare token (HomeLab)" ".login.password")
+CF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_CF_ITEM}}" ".login.password")
 kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic cloudflare-api-token-secret \
   --namespace=cert-manager \

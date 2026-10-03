@@ -59,7 +59,7 @@ mise run bake-image
 Or execute the Python script directly from anywhere in your repository:
 
 ```bash
-python3 scripts/raspberry/bake-image.py
+python3 scripts/raspberry/bake_image.py
 ```
 
 ---

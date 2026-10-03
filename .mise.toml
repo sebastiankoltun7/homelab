@@ -90,17 +90,13 @@ else
     sudo sh get-docker.sh
     rm get-docker.sh
 
-    # Add current user to the docker group so you don't need sudo for docker commands
     if ! groups | grep -q docker; then
         echo "Adding $USER to the docker group..."
         sudo usermod -aG docker $USER
-        echo "Note: If you are on WSL, restart your WSL instance ('wsl --shutdown' from PowerShell) for group changes to apply."
-        echo "Otherwise, log out and back in."
+        echo "Note: If you are on WSL, restart your WSL instance ('wsl --shutdown' from PowerShell)."
     fi
 
-    # Enable and start the Docker service (if systemd is available)
     sudo systemctl enable --now docker 2>/dev/null || sudo service docker start 2>/dev/null || true
-
     echo "Docker installation complete!"
     docker --version
 fi
@@ -145,14 +141,13 @@ fi
 """
 
 [tasks."ansible-all"]
-description = "Run all playbooks (adguard + docker + plex + k3s)"
+description = "Run all playbooks via site.yml"
 depends = ["ssh-accept-keys"]
-run = [
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_plex.yml",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml"
-]
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/site.yml"
+
+[tasks."ansible-dry-run"]
+description = "Dry-run all playbooks via site.yml"
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/site.yml --check"
 
 [tasks."ansible-adguard"]
 description = "Deploy AdGuard Home"
@@ -165,7 +160,7 @@ depends = ["ssh-accept-keys"]
 run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml"
 
 [tasks."ansible-plex"]
-description = "Deploy Plex Media Server"
+description = "Deploy Plex Media Server (storage, host mounts, & container setup)"
 depends = ["ssh-accept-keys"]
 run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_plex.yml"
 
@@ -174,29 +169,11 @@ description = "Deploy K3s single-node"
 depends = ["ssh-accept-keys"]
 run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml"
 
-[tasks."ansible-pve"]
-description = "Mount external disks on the Proxmox host"
-run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_storage.yml"
-
-[tasks."ansible-pve-host"]
-description = "Configure Proxmox host for the plex LXC"
-run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_host.yml"
-
-[tasks."ansible-dry-run"]
-description = "Dry-run all playbooks"
-run = [
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_storage.yml --check",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_host.yml --check",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml --check",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml --check",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_plex.yml --check",
-    "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml --check"
-]
 
 # ── Combined ───────────────────────────────────
 
 [tasks.all]
-description = "Full deployment sequentially (disks, Terraform + Ansible, setup local tools, install k3s apps)"
+description = "Full deployment sequentially (Terraform + Ansible, setup local tools, install k3s apps)"
 run = """
 mise run ansible-install
 mise run ssh-cleanup
@@ -205,8 +182,6 @@ mise run terraform-auth
 mise run tf-init
 mise run tf-apply
 mise run wait-for-vms
-mise run ansible-pve
-mise run ansible-pve-host
 mise run ansible-all
 mise run docker-context
 mise run kubectl-config
@@ -221,7 +196,7 @@ description = "Fetch SSH keys from Bitwarden and ensure they are loaded into ssh
 run = """
 if [ ! -f ~/.ssh/id_ed25519 ]; then
     echo "Fetching SSH keys from Bitwarden..."
-    command -v bw >/dev/null 2>&1 || { echo "Bitwarden CLI (bw) not found. Run 'mise install' first."; exit 1; }
+    command -v bw >/dev/null 2>&1 || { echo "Bitwarden CLI (bw) not found."; exit 1; }
 
     if [ -z "$BW_SESSION" ]; then
         export BW_SESSION="$(bw unlock --raw)"
@@ -235,18 +210,11 @@ if [ ! -f ~/.ssh/id_ed25519 ]; then
 
     bw get item "{{env.BW_SSH_ITEM}}" | jq -r '.sshKey.publicKey' > ~/.ssh/id_ed25519.pub
     chmod 644 ~/.ssh/id_ed25519.pub
-
-    echo "SSH keys successfully imported from Bitwarden."
-else
-    echo "SSH keys already exist locally."
 fi
 
 eval "$(ssh-agent -s)" > /dev/null 2>&1 || true
 if ! ssh-add -l 2>/dev/null | grep -q "id_ed25519"; then
     ssh-add ~/.ssh/id_ed25519
-    echo "SSH key added to ssh-agent."
-else
-    echo "SSH key is already loaded in ssh-agent."
 fi
 """
 
@@ -254,19 +222,17 @@ fi
 description = "Fetch HCP Terraform token from Bitwarden and configure credentials"
 interactive = true
 run = """
-echo "Configuring HCP Terraform credentials..."
-command -v bw >/dev/null 2>&1 || { echo "Bitwarden CLI (bw) not found. Run 'mise install' first."; exit 1; }
+command -v bw >/dev/null 2>&1 || { echo "Bitwarden CLI (bw) not found."; exit 1; }
 
 if [ -z "$BW_SESSION" ]; then
     export BW_SESSION="$(bw unlock --raw)"
 fi
 
 mkdir -p ~/.terraform.d
-
 TF_TOKEN=$(bw list items --search "{{env.BW_TF_ITEM}}" | jq -r '.[0].notes // empty')
 
 if [ -z "$TF_TOKEN" ] || [ "$TF_TOKEN" = "null" ]; then
-    echo "Error: Failed to fetch '{{env.BW_TF_ITEM}}' from Bitwarden or token is empty."
+    echo "Error: Failed to fetch '{{env.BW_TF_ITEM}}' from Bitwarden."
     exit 1
 fi
 
@@ -334,7 +300,6 @@ sed -i 's/127\\.0\\.0\\.1/{{env.K3S_HOST_IP}}/g' {{env.KUBECONFIG_SRC}}
 mkdir -p ~/.kube
 cp {{env.KUBECONFIG_SRC}} ~/.kube/config
 chmod 600 ~/.kube/config
-echo "Kubeconfig installed to ~/.kube/config"
 kubectl get nodes || (echo "kubectl get nodes failed" && exit 1)
 """
 
@@ -343,7 +308,6 @@ description = "Install the helm-diff plugin and verify it"
 run = """
 helm plugin list | grep -q '^diff' || helm plugin install --verify=false https://github.com/databus23/helm-diff/releases/latest/download/helm-diff-linux-amd64.tgz
 helmfile --file {{env.HELMFILE_PATH}} list || (echo "helmfile list failed" && exit 1)
-echo "helm-diff ready. Try: mise run apps-diff"
 """
 
 # ── K3s apps (helmfile) ───────────────────────
@@ -359,7 +323,6 @@ helmfile --file {{env.HELMFILE_PATH}} apply
 echo ""
 echo "Headlamp:   https://dashboard.k3s.internal (token: mise run headlamp-token)"
 echo "Grafana:    https://grafana.k3s.internal    (user: admin, password: mise run monitoring-password)"
-echo "Prometheus: https://grafana-prometheus.k3s.internal"
 """
 
 [tasks."apps-list"]
@@ -370,7 +333,6 @@ run = "helmfile --file {{env.HELMFILE_PATH}} list"
 description = "Uninstall every release in apps/k3s/helmfile.yaml"
 run = """
 helmfile --file {{env.HELMFILE_PATH}} destroy
-echo "note: monitoring PVCs survive uninstall. Reclaim with: kubectl delete pvc -n monitoring --all"
 """
 
 [tasks."headlamp-token"]

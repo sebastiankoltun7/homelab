@@ -1,5 +1,5 @@
 # Homelab
-<p align="left">
+<p>
   <img src="https://img.shields.io/badge/Gitleaks-Protected-brightgreen?style=flat-square&logo=git" alt="Gitleaks" />
   <img src="https://img.shields.io/badge/Trivy-Scanned-blue?style=flat-square&logo=security" alt="Trivy" />
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License" />
@@ -82,12 +82,10 @@ mise run tf-destroy           # destroy all infrastructure
 
 ```bash
 mise run ansible-all          # all playbooks (adguard + docker + plex + k3s)
-mise run ansible-adguard      # deploy AdGuard Home
+mise run ansible-adguard      # deploy AdGuard Home with a Let's Encrypt wildcard cert
 mise run ansible-docker       # deploy Docker host
-mise run ansible-plex         # deploy Plex Media Server
+mise run ansible-plex         # deploy Plex Media Server (external disks, bind mounts, GPU passthrough)
 mise run ansible-k3s          # deploy K3s single-node (192.168.1.104)
-mise run ansible-pve          # mount external USB disks on Proxmox
-mise run ansible-pve-host     # configure the Proxmox host for the plex LXC (GPU passthrough)
 mise run ansible-dry-run      # check mode, all playbooks
 ```
 
@@ -112,6 +110,19 @@ mise run apps-list            # list the releases declared in apps/k3s/helmfile.
 mise run apps-destroy         # uninstall every release in apps/k3s/helmfile.yaml
 ```
 
+`mise run apps` also creates the `cert-manager` namespace with the Cloudflare API token secret and
+applies `apps/k3s/cluster-issuer.yaml`, which is what issues the Let's Encrypt certificates for the
+ingress hostnames. See [Apps](apps/README.md#tls-for-the-ingresses).
+
+### Raspberry Pi
+
+```bash
+mise run bake-image           # download Raspberry Pi OS Lite and prebake it with cloud-init + the Bitwarden SSH key
+```
+
+See [scripts/raspberry](scripts/raspberry/README.md). The Pi is standalone — not managed by Terraform
+or Ansible.
+
 ### Service logins
 
 Credentials are not stored in the repo — read them out of the cluster:
@@ -123,18 +134,22 @@ mise run monitoring-password  # generated Grafana admin password
 
 | Service | URL | Login |
 |---------|-----|-------|
-| Headlamp | `https://dashboard.k3s.internal` | paste the `headlamp-token` output |
-| Grafana | `https://grafana.k3s.internal` | user `admin`, password from `monitoring-password` |
-| Prometheus | `https://grafana-prometheus.k3s.internal` | none |
-| AdGuard Home | `https://adguard.internal` | `admin_username` + password from `vault.yml` |
+| Headlamp | `https://dashboard.k3s.skoltun.dev` | paste the `headlamp-token` output |
+| Grafana | `https://grafana.k3s.skoltun.dev` | user `admin`, password from `monitoring-password` |
+| Prometheus | `https://grafana-prometheus.k3s.skoltun.dev` | none |
+| AdGuard Home | `https://adguard.skoltun.dev` | `admin_username` + password from `vault.yml` |
 | Plex | `http://192.168.1.103:32400/web` | claim once, then your Plex account |
+
+Headlamp, Grafana and AdGuard Home serve publicly trusted Let's Encrypt certificates. Prometheus has
+no `tls` block, so it still falls back to Traefik's self-signed default and the browser asks you to
+accept the warning once.
 
 `mise run all` ends with `mise run apps`, which prints the first three URLs together with the tasks
 that produce the credentials.
 
 > `mise run all` runs, in order: `ansible-install` → `ssh-cleanup` → `ssh-accept-keys` →
-> `terraform-auth` → `tf-init` → `tf-apply` → `wait-for-vms` → `ansible-pve` → `ansible-pve-host` →
-> `ansible-all` → `docker-context` → `kubectl-config` → `helm-diff` → `apps`. Manual
+> `terraform-auth` → `tf-init` → `tf-apply` → `wait-for-vms` → `ansible-all` →
+> `docker-context` → `kubectl-config` → `helm-diff` → `apps`. Manual
 > `mise run ansible-*` runs also accept host keys first (`ssh-accept-keys` covers .100, .102, .104);
 > `ssh-cleanup` only happens inside `all`, so run it by hand after a VM rebuild.
 
@@ -161,7 +176,7 @@ Subnet: `192.168.1.0/24` · Tags: `management-plane` + `role-adguard`/`role-dock
 Two mechanisms, no others:
 
 - **Docker Compose** on the Docker VM — add `apps/docker/<name>/docker-compose.yml`, attached to the
-  external `proxy-net` bridge, routed by `VIRTUAL_HOST` under the `*.docker.internal` wildcard.
+  external `proxy-net` bridge, routed by `VIRTUAL_HOST` under the `*.docker.skoltun.dev` wildcard.
 - **Helmfile** on K3s — add a release to `apps/k3s/helmfile.yaml` with overrides in
   `apps/k3s/<name>/values.yaml`, then `mise run apps`.
 
@@ -170,23 +185,30 @@ See [Apps](apps/README.md) for how to add, deploy, scope, and retire either kind
 ## Documentation
 
 - [Initial Setup](docs/setup.md) - Prerequisites, Proxmox config, first deployment, troubleshooting
-- [Local Network Setup](docs/network-setup.md) - DNS configuration, client setup, trusting the AdGuard TLS certificate, troubleshooting
+- [Local Network Setup](docs/network-setup.md) - DNS configuration, client setup, HTTPS certificates, troubleshooting
 - [Ansible](ansible/README.md) - Playbooks, vault, TLS cert, Docker network
 - [Apps](apps/README.md) - Adding and deploying apps with Docker Compose or helmfile
+- [Raspberry Pi image baker](scripts/raspberry/README.md) - Prebaking Raspberry Pi OS with cloud-init
 
 ## Prerequisites
 
 - [mise](https://mise.jdx.dev/getting-started.html) — the only tool you install yourself. It manages
   everything else from [`.mise.toml`](.mise.toml); `mise install` fetches the pinned versions.
-- Bitwarden CLI + an unlocked vault — `mise run setup` reads two items from it: `homelab-ssh-key`
-  (written to `~/.ssh/id_ed25519`) and `hcp-terraform-token` (its notes become the HCP API token).
-  Set `BW_SESSION` to skip the interactive unlock, and note that `terraform-auth` is interactive.
+- Bitwarden CLI + an unlocked vault — the tasks read three items from it: `homelab-ssh-key`
+  (written to `~/.ssh/id_ed25519`), `hcp-terraform-token` (its notes become the HCP API token) and
+  `Cloudflare token (HomeLab)` (its password becomes the Let's Encrypt DNS-01 token for AdGuard and
+  cert-manager). Set `BW_SESSION` to skip the interactive unlock, and note that `terraform-auth` is
+  interactive.
+- A domain you control — `skoltun.dev` in this repo, delegated to Cloudflare, with an API token that
+  can edit DNS for the zone. Every HTTPS endpoint gets a publicly trusted certificate, so there is
+  nothing to trust manually. See [Initial Setup](docs/setup.md#5-domain-and-certificates).
 - `jq` and OpenSSH — used by the `ssh-key` and `terraform-auth` tasks.
 - Proxmox VE host reachable at `192.168.1.100:8006`
 - Docker >= 24.0 — installed for you on Linux/WSL2 by `mise run install-docker-local`; the Docker VM
   is the runtime, so this is only the local client plus the remote `homelab` context.
 - Ansible Core >= 2.14 — installed into `ansible/.venv` by `mise run setup-venv`, no global install
   needed. Activate it with `source ansible/.venv/bin/activate` to run `ansible-playbook` directly.
+- `sudo` + `losetup` — only if you run `mise run bake-image` for the Raspberry Pi.
 
 Pinned in [`.mise.toml`](.mise.toml) and installed by `mise install`:
 
@@ -209,4 +231,4 @@ To use a different tool version, edit `.mise.toml` (or `mise use helm@3.22.0`) a
 Versions tested: Terraform 1.16.x, kubectl `v1.37.1` against server `v1.36.4+k3s1`, Helm `v4.3.0`,
 helmfile `1.8.0`, helm-diff `3.15.15`.
 
-Provider/collections pinned: `bpg/proxmox 0.108.0` (`terraform/providers.tf:5`, `terraform/.terraform.lock.hcl:5`), `ansible.posix 2.2.0`, `community.docker 5.2.1`, `community.general 13.0.1`, `community.proxmox 2.0.0` (`ansible/requirements.yml:1`).
+Provider/collections pinned: `bpg/proxmox 0.108.0` (`terraform/providers.tf:5`, `terraform/.terraform.lock.hcl:5`), `ansible.posix 2.2.0`, `community.docker 5.2.1`, `community.general 13.0.1`, `community.proxmox 2.0.0` (`ansible/requirements.yml:5`).

@@ -2,34 +2,47 @@
 #
 # Values paths are relative to this file, not the caller's CWD, so
 # `helmfile --file apps/k3s/helmfile.yaml` works from anywhere.
-# Deploy everything with `mise run apps` (or your chosen mise task).
+# Deploy everything with `mise run apps`, which also creates the cert-manager
+# namespace and applies cluster-issuer.yaml after this sync.
 #
 # To retire an app, set its `installed:` to false and run `mise run apps`: helmfile
 # reports it as DELETED in `apps-diff` and uninstalls the release on apply. The
 # entry stays in the file so you can flip it back. `mise run apps-destroy` removes
 # everything at once, including entries already marked `installed: false`.
+#
+# cert-manager comes first: the headlamp/monitoring ingresses reference the
+# `letsencrypt-prod` ClusterIssuer, and cert-manager must install its CRDs before
+# that manifest is applied.
 
 repositories:
   - name: headlamp
     url: https://kubernetes-sigs.github.io/headlamp/
   - name: prometheus-community
     url: https://prometheus-community.github.io/helm-charts
+  - name: jetstack
+    url: https://charts.jetstack.io
 
 helmDefaults:
   wait: true
   timeout: 600
-  # serverSide is deliberately unset so Helm keeps following each release's
-  # recorded apply method. Setting it to "true" would push every resource
-  # through server-side apply on the next run.
 
 releases:
+  - name: cert-manager
+    namespace: cert-manager
+    createNamespace: true
+    chart: jetstack/cert-manager
+    version: v1.14.3
+    set:
+      - name: installCRDs
+        value: true
+
   - name: headlamp
     installed: true
     namespace: headlamp
     createNamespace: true
     chart: headlamp/headlamp
-    # Pinned here; override for a one-off with HEADLAMP_CHART_VERSION=0.44.0 mise run apps
     version: '{{ env "HEADLAMP_CHART_VERSION" | default "0.45.0" }}'
+    disableValidation: true
     values:
       - headlamp/values.yaml
 
@@ -38,7 +51,6 @@ releases:
     namespace: monitoring
     createNamespace: true
     chart: prometheus-community/kube-prometheus-stack
-    # Pinned here; override for a one-off with MONITORING_CHART_VERSION=91.9.0 mise run apps
     version: '{{ env "MONITORING_CHART_VERSION" | default "91.8.1" }}'
     disableValidation: true
     values:

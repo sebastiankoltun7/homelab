@@ -55,6 +55,15 @@ Set DNS manually on each device to `192.168.1.101`.
 
 ## Client Configuration
 
+If you do not point a client at AdGuard as its DNS server, map the hostnames you use by hand — the
+public DNS for `skoltun.dev` knows nothing about your LAN:
+
+```
+192.168.1.101 adguard.skoltun.dev
+192.168.1.104 dashboard.k3s.skoltun.dev grafana.k3s.skoltun.dev grafana-prometheus.k3s.skoltun.dev
+192.168.1.102 <app>.docker.skoltun.dev
+```
+
 ### Windows
 
 Set DNS via PowerShell:
@@ -98,109 +107,49 @@ sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
 2. DNS tab > Click `+` > Add `192.168.1.101`
 3. TCP/IP tab > Configure IPv6: Link-local only
 
-## Trusting the AdGuard TLS certificate
+## HTTPS certificates
 
-AdGuard Home serves its admin dashboard over `https://adguard.internal`. Because the certificate is self-signed (no public CA), browsers will warn "Your connection is not private" until you install it as a trusted certificate.
+AdGuard Home serves its admin dashboard over `https://adguard.skoltun.dev` with a **Let's Encrypt
+wildcard certificate** for `skoltun.dev` + `*.skoltun.dev`, issued by the Ansible playbook with
+certbot's DNS-01 challenge against Cloudflare. Since it is a publicly trusted certificate, browsers
+and `curl` accept it out of the box — there is nothing to install and no warning to click through.
 
-The Ansible playbook (`ansible/playbooks/install_adguard.yml:52`) generates the certificate and fetches a copy to `ansible/playbooks/files/cert.crt` (gitignored via `.gitignore:35`). Install/trust that file on any machine that should open the dashboard over HTTPS without warnings:
+Requirements and consequences:
 
-```bash
-# Verify the cert and its name
-openssl x509 -in ansible/playbooks/files/cert.crt -noout -subject -ext subjectAltName
-```
+- `skoltun.dev` must be delegated to Cloudflare, and the Cloudflare API token in Bitwarden (item
+  `Cloudflare token (HomeLab)`) must be allowed to edit DNS records for that zone. DNS-01 needs no
+  inbound port 80 and no public DNS record for the container, so it works from a private LAN.
+- The certificate covers hostnames only. `https://192.168.1.101` is **not** covered — use the
+  hostname, or plain `http://192.168.1.101`, which AdGuard still serves.
+- The K3s ingresses get their own certificates from cert-manager through the same DNS-01 solver; see
+  [Apps](../apps/README.md#tls-for-the-ingresses).
 
-Then import it per your OS:
-
-### Windows
-
-Via PowerShell (admin):
-
-```powershell
-Import-Certificate -FilePath "cert.crt" -CertStoreLocation Cert:\LocalMachine\Root
-```
-
-Or via `certutil` (admin):
-
-```powershell
-certutil -addstore -f Root cert.crt
-```
-
-Or GUI: double-click `cert.crt` → **Install Certificate** → **Local Machine** → **Trusted Root Certification Authorities**. Reopen the browser afterwards (Chrome/Edge read the Windows cert store at startup).
-
-To uninstall later: `certutil -delstore Root <thumbprint>` or get the thumbprint with `Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like "*adguard*"`.
-
-### Linux
-
-Debian/Ubuntu (system-wide):
+Verify:
 
 ```bash
-sudo cp cert.crt /usr/local/share/ca-certificates/adguard.crt
-sudo update-ca-certificates
+curl https://adguard.skoltun.dev          # dashboard HTML, no --cacert needed
 ```
 
-Then add the hostname to `/etc/hosts` if you don't use AdGuard as your DNS server:
-
-```
-192.168.1.101 adguard.internal
-```
-
-Fedora/RHEL:
-
-```bash
-sudo cp cert.crt /etc/pki/ca-trust/source/anchors/adguard.crt
-sudo update-ca-trust
-```
-
-**Chrome/Edge** on Linux uses the NSS store; import there too:
-
-```bash
-certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "AdGuard" -i cert.crt
-```
-
-Or use the GUI: `chrome://settings/certificates` → Authorities → Import.
-
-**Firefox** uses its own store:
-1. Settings → Privacy & Security → Certificates → **View Certificates** → Authorities → **Import**.
-2. Select `cert.crt` and tick "Trust this CA to identify websites".
-
-### macOS
-
-1. Double-click `cert.crt` → Keychain Access opens.
-2. Drag/copy the certificate into the **System** keychain (or click the lock, choose "Add to Keychain").
-3. Double-click the certificate → expand **Trust** → set **When using this certificate** → **Always Trust**.
-4. Close the window, enter your password to confirm. Restart the browser.
-
-Or via CLI:
-
-```bash
-sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain cert.crt
-```
-
-### Verifying
-
-```bash
-curl --cacert ansible/playbooks/files/cert.crt https://adguard.internal
-curl --cacert ansible/playbooks/files/cert.crt https://192.168.1.101
-```
-
-If either returns the AdGuard dashboard HTML (not a TLS error), the certificate is trusted.
+If you hit a certificate error, the usual causes are a stale browser cache, a client that still has
+the old self-signed certificate pinned as a trusted root (remove it), or a DNS response from a
+different resolver than AdGuard.
 
 ## Verifying DNS is Working
 
 ```bash
 # Test resolution against AdGuard
 nslookup google.com 192.168.1.101
-nslookup adguard.internal 192.168.1.101
-nslookup app.docker.internal 192.168.1.101  # docker apps: *.docker.internal → 192.168.1.102 (ansible/group_vars/role_adguard.yml:20)
+nslookup adguard.skoltun.dev 192.168.1.101
+nslookup app.docker.skoltun.dev 192.168.1.101  # docker apps: *.docker.skoltun.dev → 192.168.1.102 (ansible/group_vars/role_adguard.yml:21)
 
 # Test from Linux/Mac
 dig @192.168.1.101 google.com
-dig @192.168.1.101 adguard.internal
-dig @192.168.1.101 app.docker.internal
+dig @192.168.1.101 adguard.skoltun.dev
+dig @192.168.1.101 app.docker.skoltun.dev
 
 # Check AdGuard dashboard
 open http://192.168.1.101
-open https://adguard.internal   # after trusting the cert
+open https://adguard.skoltun.dev
 ```
 
 Verify queries appear in AdGuard's query log after visiting an ad-heavy site.
@@ -235,15 +184,18 @@ Configure in AdGuard dashboard (Settings > DNS settings):
 
 **Cause:** Devices use hardcoded DNS (e.g., `8.8.8.8`).
 
-**Fix:** Block external DNS at router/firewall (see Firewall Rules section).
+**Fix:** Block outbound port 53 to anything except `192.168.1.101` in your router's firewall.
 
 ### Dashboard unreachable
 
 **Check:**
 - HTTP address in config: `192.168.1.101:80`
-- HTTPS address in config: `https://adguard.internal` (needs the cert trusted, see above)
+- HTTPS address in config: `https://adguard.skoltun.dev` (publicly trusted certificate, see
+  [HTTPS certificates](#https-certificates))
 - LXC container is running in Proxmox
 - No firewall blocking ports 80/443
+- Certificate issued? `certbot certificates` on `192.168.1.101` — if the request failed, AdGuard is
+  serving with a stale or missing chain
 
 ### High latency
 
@@ -256,13 +208,13 @@ Configure in AdGuard dashboard (Settings > DNS settings):
 ```bash
 # Linux/Mac - test DNS resolution
 dig @192.168.1.101 google.com
-dig @192.168.1.101 adguard.internal
-dig @192.168.1.101 app.docker.internal  # docker wildcard
+dig @192.168.1.101 adguard.skoltun.dev
+dig @192.168.1.101 app.docker.skoltun.dev  # docker wildcard
 
 # Windows - test DNS resolution
 nslookup google.com 192.168.1.101
-nslookup adguard.internal 192.168.1.101
-nslookup app.docker.internal 192.168.1.101
+nslookup adguard.skoltun.dev 192.168.1.101
+nslookup app.docker.skoltun.dev 192.168.1.101
 
 # Check if port 53 is open
 telnet 192.168.1.101 53

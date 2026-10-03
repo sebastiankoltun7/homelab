@@ -2,16 +2,23 @@
 # Deployed by `mise run apps`; the chart version is pinned in apps/k3s/helmfile.yaml.
 # Chart: https://kubernetes-sigs.github.io/headlamp/
 
-# dashboard.k3s.internal resolves via the *.k3s.internal wildcard in
-# ansible/group_vars/role_adguard.yml:30, so no extra AdGuard rewrite is needed.
+# dashboard.k3s.skoltun.dev resolves via the *.k3s.skoltun.dev wildcard in
+# ansible/group_vars/role_adguard.yml:24, so no extra AdGuard rewrite is needed.
+# The tls block + cert-manager annotation get a Let's Encrypt certificate (see apps/README.md).
 ingress:
   enabled: true
   ingressClassName: traefik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - host: dashboard.k3s.internal
+    - host: dashboard.k3s.skoltun.dev
       paths:
         - path: /
           type: Prefix
+  tls:
+    - secretName: headlamp-tls
+      hosts:
+        - dashboard.k3s.skoltun.dev
 
 # Keep the name `headlamp-admin` so `mise run headlamp-token` stays stable.
 serviceAccount:

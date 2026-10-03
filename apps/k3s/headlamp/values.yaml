@@ -3,7 +3,8 @@
 # Chart: https://kubernetes-sigs.github.io/headlamp/
 
 # dashboard.k3s.skoltun.dev resolves via the *.k3s.skoltun.dev wildcard in
-# ansible/group_vars/role_adguard.yml:30, so no extra AdGuard rewrite is needed.
+# ansible/group_vars/role_adguard.yml:24, so no extra AdGuard rewrite is needed.
+# The tls block + cert-manager annotation get a Let's Encrypt certificate (see apps/README.md).
 ingress:
   enabled: true
   ingressClassName: traefik

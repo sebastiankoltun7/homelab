@@ -182,21 +182,11 @@ description = "Deploy K3s single-node"
 depends = ["ssh-accept-keys"]
 run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml"
 
-[tasks."ansible-pve"]
-description = "Mount external disks on the Proxmox host"
-run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_storage.yml"
-
-[tasks."ansible-pve-host"]
-description = "Configure Proxmox host for the plex LXC"
-run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/setup_pve_host.yml"
-
 [tasks."ansible-dry-run"]
 description = "Dry-run all playbooks"
 run = """
 CF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_CF_ITEM}}" ".login.password" 2>/dev/null || echo "dummy-token")
 cd {{env.ANSIBLE_DIR}}
-.venv/bin/ansible-playbook playbooks/setup_pve_storage.yml --check
-.venv/bin/ansible-playbook playbooks/setup_pve_host.yml --check
 .venv/bin/ansible-playbook playbooks/install_adguard.yml --check -e "cloudflare_api_token=$CF_TOKEN"
 .venv/bin/ansible-playbook playbooks/install_docker.yml --check
 .venv/bin/ansible-playbook playbooks/install_plex.yml --check
@@ -215,8 +205,6 @@ mise run terraform-auth
 mise run tf-init
 mise run tf-apply
 mise run wait-for-vms
-mise run ansible-pve
-mise run ansible-pve-host
 mise run ansible-all
 mise run docker-context
 mise run kubectl-config

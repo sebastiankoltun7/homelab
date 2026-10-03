@@ -25,11 +25,16 @@ a shell where `mise activate` never ran.
 
 Also needed, and not managed by mise:
 
-- **Bitwarden CLI** authenticated against a vault holding two items (see
+- **Bitwarden CLI** authenticated against a vault holding three items (see
   [Credentials](#credentials-from-bitwarden)).
+- **A domain you control** (`skoltun.dev` throughout this repo), delegated to Cloudflare, plus a
+  Cloudflare API token with **Zone: DNS / Edit** rights for that zone. It is used for Let's Encrypt
+  DNS-01 challenges, so every HTTPS endpoint gets a publicly trusted certificate — see
+  [Domain and certificates](#5-domain-and-certificates).
 - **`jq`** and **OpenSSH** — used by the `ssh-key` and `terraform-auth` tasks.
 - **Docker** — `mise run install-docker-local` installs the client on Linux/WSL2 (and adds your user
   to the `docker` group). It is the client only; the Docker VM at `.102` is the runtime.
+- **sudo and `losetup`** — only for `mise run bake-image`, which loop-mounts a Raspberry Pi image.
 
 Tested versions: Terraform 1.16.x, kubectl `v1.37.1` against server `v1.36.4+k3s1`, Helm `v4.3.0`,
 helmfile `1.8.0`, helm-diff `3.15.15`.
@@ -120,7 +125,9 @@ See `terraform/variables.tf` for types and defaults. The state file is gitignore
 > ```
 >
 > Bind mounts and device passthrough on LXC can only be applied by `root@pam` itself, so those are
-> handled out-of-band by the `ansible-pve-host` playbook over SSH.
+> handled over SSH instead of through the Proxmox API — the first play of `install_plex.yml` runs
+> against the `pve` group (`192.168.1.100`) and does the bind mounts, GPU entries and disk mounts
+> itself.
 
 ### 3. Configure the vault
 
@@ -142,20 +149,42 @@ stable by-id name on the Proxmox host:
 ssh root@192.168.1.100 "ls -l /dev/disk/by-id/ | grep -i usb"
 ```
 
-`mise run all` detects the filesystem and mounts it persistently by UUID at `/mnt/pve/<name>` before
-Terraform creates the containers. `assert_dirs` must already exist on the drive; `create_dirs` is
-created if missing.
+`ansible/tasks/configure_external_disk.yml` (run by the first play of `install_plex.yml`) detects the
+filesystem and mounts it persistently by UUID at `/mnt/pve/<name>`, then binds `/PlexMedia` and
+`/plex-config` into the Plex container. Because it runs from `mise run ansible-plex` — which
+`ansible-all` and `mise run all` call after `tf-apply` — the Plex container must already exist, and
+the task fails fast if the drive is not attached. `assert_dirs` must already exist on the drive;
+`create_dirs` is created if missing.
+
+### 5. Domain and certificates
+
+All hostnames live under `skoltun.dev`, delegated to Cloudflare, and every HTTPS endpoint uses a real
+Let's Encrypt certificate obtained through the DNS-01 challenge — no self-signed certificates and
+nothing to trust on client machines. Two places consume the same Cloudflare API token:
+
+- `mise run ansible-adguard` (and `ansible-all`) requests a `skoltun.dev` + `*.skoltun.dev`
+  wildcard certificate for AdGuard Home with certbot.
+- `mise run apps` stores the token in the `cert-manager` namespace and applies
+  `apps/k3s/cluster-issuer.yaml`, so cert-manager issues certificates for the K3s ingresses.
+
+Keep the token in Bitwarden (item `Cloudflare token (HomeLab)`) with **Zone: DNS / Edit** rights for
+`skoltun.dev`. See [HTTPS certificates](network-setup.md#https-certificates) and
+[Apps](../apps/README.md#tls-for-the-ingresses).
 
 ### Credentials from Bitwarden
 
-Two tasks read from Bitwarden, both expecting the CLI to be installed (`mise install`) and the vault
-unlocked. Export `BW_SESSION=$(bw unlock --raw)` once to skip the interactive prompt; `terraform-auth`
-is flagged interactive and always prompts when the session is missing.
+Several tasks read from Bitwarden, all expecting the CLI to be installed (`mise install`) and the
+vault unlocked. Export `BW_SESSION=$(bw unlock --raw)` once to skip the interactive prompt;
+`terraform-auth` is flagged interactive and always prompts when the session is missing.
 
-| Task | Bitwarden item | Used for |
-| --- | --- | --- |
-| `mise run ssh-key` | `homelab-ssh-key` | private/public SSH key written to `~/.ssh/id_ed25519[.pub]`, loaded into ssh-agent |
-| `mise run terraform-auth` | `hcp-terraform-token` | the item's **notes** field, written to `~/.terraform.d/credentials.tfrc.json` for `app.terraform.io` |
+| Task | Bitwarden item | Field | Used for |
+| --- | --- | --- | --- |
+| `mise run ssh-key`, `mise run bake-image` | `homelab-ssh-key` | `sshKey.privateKey` / `.sshKey.publicKey` | SSH key written to `~/.ssh/id_ed25519[.pub]` and loaded into ssh-agent; the public key baked into the Pi image |
+| `mise run terraform-auth` | `hcp-terraform-token` | `notes` | written to `~/.terraform.d/credentials.tfrc.json` for `app.terraform.io` |
+| `mise run ansible-adguard`, `ansible-all`, `ansible-dry-run`, `apps` | `Cloudflare token (HomeLab)` | `login.password` | Let's Encrypt DNS-01 challenges for AdGuard and for cert-manager |
+
+`ansible-dry-run` falls back to a placeholder token when the vault is locked, since certbot is not
+reached in check mode.
 
 `ssh-key` is a no-op when `~/.ssh/id_ed25519` already exists, so it never overwrites a key you
 generated yourself.
@@ -165,8 +194,8 @@ generated yourself.
 ```bash
 mise run tf-plan    # preview
 mise run all        # ansible-install → ssh-cleanup → ssh-accept-keys → terraform-auth →
-                    # tf-init → tf-apply → wait-for-vms → ansible-pve → ansible-pve-host →
-                    # ansible-all → docker-context → kubectl-config → helm-diff → apps
+                    # tf-init → tf-apply → wait-for-vms → ansible-all → docker-context →
+                    # kubectl-config → helm-diff → apps
 ```
 
 `mise run all` accepts SSH host keys first, so stale host keys after a VM rebuild are handled
@@ -218,17 +247,31 @@ as powerful as root in the cluster and expires after 24h — re-run the task for
 Grafana password is generated by the chart on first install and lives in the
 `monitoring-grafana` secret; it survives `mise run apps-destroy` only as long as the PVC does.
 
-The cluster serves Traefik's self-signed certificate, so browsers warn on the `*.k3s.skoltun.dev`
-hostnames until you accept it.
+The Headlamp and Grafana ingresses get Let's Encrypt certificates from cert-manager, so those two
+URLs are warning-free. Prometheus has no `tls` block in
+`apps/k3s/monitoring/values.yaml`, so `grafana-prometheus.k3s.skoltun.dev` still falls back to
+Traefik's self-signed default and the browser asks you to accept it once.
 
 ## Verification
 
 ```bash
 docker info                              # Docker VM is up (remote context "homelab")
 nslookup google.com 192.168.1.101        # AdGuard resolving
+curl https://adguard.skoltun.dev         # AdGuard dashboard over a trusted certificate
 ssh root@192.168.1.103 "findmnt /PlexMedia && ls /dev/dri"   # Plex mounts
 kubectl get nodes                        # K3s Ready
+kubectl get pods -n cert-manager          # cert-manager running
+kubectl get certificate                   # headlamp-tls / grafana-tls issued and Ready
 helmfile diff -f apps/k3s/helmfile.yaml  # empty == cluster matches the state file
+```
+
+`kubectl get certificate` needs a few seconds after the first `mise run apps`: cert-manager solves
+the DNS-01 challenge first. If a certificate stays `Pending`, check the ClusterIssuer and the
+`cloudflare-api-token-secret`:
+
+```bash
+kubectl describe clusterissuer letsencrypt-prod
+kubectl get events -n cert-manager --sort-by=.lastTimestamp | tail
 ```
 
 Run the `kubectl` and `helmfile` commands through mise (`mise exec -- ...`) if your shell has not
@@ -282,14 +325,30 @@ mise run ssh-cleanup     # clear stale keys for .100, .102, .104
 - **`bw: command not found`** — `mise install` did not finish, or the shell has not picked up
   mise's shims.
 - **`You are not logged in`** — unlock the vault, or export `BW_SESSION=$(bw unlock --raw)`.
-- **Missing item** — `homelab-ssh-key` and `hcp-terraform-token` must exist in the vault the CLI is
-  pointed at; `terraform-auth` reads the token from the item's notes field, which is empty if the
-  token was stored elsewhere.
+- **Missing item** — `homelab-ssh-key`, `hcp-terraform-token` and `Cloudflare token (HomeLab)` must
+  exist in the vault the CLI is pointed at. `terraform-auth` reads the token from the item's notes
+  field, the Cloudflare token from `login.password`; both fail if the secret was stored elsewhere.
 
 ### AdGuard dashboard unreachable
 
 - Check the LXC is running and port 80 is not blocked: `curl http://192.168.1.101`
-- TLS certs live in `/opt/AdGuardHome/certs/`
+- TLS certs live in `/opt/AdGuardHome/certs/`, copied from `/etc/letsencrypt/live/skoltun.dev/`
+- **certbot fails** — usually the Cloudflare token lacks DNS edit rights for the zone, or the domain
+  is not on the Cloudflare account the token belongs to. The vault must be unlocked for
+  `mise run ansible-adguard` to get the token at all.
+
+### Certificates do not get issued
+
+- **`no such host` / Cloudflare API errors in `certbot` or `cert-manager` logs** — the token in
+  Bitwarden is wrong or lacks Zone: DNS / Edit for `skoltun.dev`.
+- **`unauthorized` from the ACME server** — the account email in
+  `apps/k3s/cluster-issuer.yaml` / the certbot command is not reachable, or you hit the
+  duplicate-certificate rate limit.
+- **Certificate `Pending` forever** — the ClusterIssuer was never applied. `mise run apps` applies
+  `apps/k3s/cluster-issuer.yaml` after the helmfile sync; re-run it, or check
+  `kubectl get clusterissuer`.
+- **Rate limits** — Let's Encrypt allows 5 duplicate certificates per week; prefer waiting for the
+  existing one over forcing a re-issue.
 
 ### K3s / kubectl
 

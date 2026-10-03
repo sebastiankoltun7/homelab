@@ -1,6 +1,8 @@
 # kube-prometheus-stack: Prometheus + Grafana + Alertmanager + node-exporter.
 # Deployed by `mise run apps`; chart version pinned in apps/k3s/helmfile.yaml.
-# Hostnames resolve via the *.k3s.skoltun.dev wildcard (role_adguard.yml:30).
+# Hostnames resolve via the *.k3s.skoltun.dev wildcard (role_adguard.yml:24).
+# Grafana gets a Let's Encrypt certificate via cert-manager; Prometheus intentionally
+# has no tls block and keeps Traefik's self-signed default.
 
 # This node has 8.2Gi total allocatable storage and local-path cannot expand
 # (reclaimPolicy=Delete), so the PVCs below are sized to leave headroom.

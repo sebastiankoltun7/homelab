@@ -1,4 +1,18 @@
 # Helmfile state for the K3s cluster (192.168.1.104).
+#
+# Values paths are relative to this file, not the caller's CWD, so
+# `helmfile --file apps/k3s/helmfile.yaml` works from anywhere.
+# Deploy everything with `mise run apps`, which also creates the cert-manager
+# namespace and applies cluster-issuer.yaml after this sync.
+#
+# To retire an app, set its `installed:` to false and run `mise run apps`: helmfile
+# reports it as DELETED in `apps-diff` and uninstalls the release on apply. The
+# entry stays in the file so you can flip it back. `mise run apps-destroy` removes
+# everything at once, including entries already marked `installed: false`.
+#
+# cert-manager comes first: the headlamp/monitoring ingresses reference the
+# `letsencrypt-prod` ClusterIssuer, and cert-manager must install its CRDs before
+# that manifest is applied.
 
 repositories:
   - name: headlamp

@@ -159,13 +159,9 @@ cd {{env.ANSIBLE_DIR}}
 """
 
 [tasks."ansible-adguard"]
-description = "Deploy AdGuard Home with Let's Encrypt (fetching token from Bitwarden)"
+description = "Deploy AdGuard Home"
 depends = ["ssh-accept-keys"]
-run = """
-echo "Fetching Cloudflare token from Bitwarden..."
-CF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_CF_ITEM}}" ".login.password")
-cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml -e "cloudflare_api_token=$CF_TOKEN"
-"""
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml"
 
 [tasks."ansible-docker"]
 description = "Deploy Docker host"
@@ -347,6 +343,9 @@ helmfile --file {{env.HELMFILE_PATH}} apply
 echo "Waiting for cert-manager CRDs to be ready, then applying ClusterIssuer..."
 kubectl wait --for=condition=established --timeout=60s crd/clusterissuers.cert-manager.io 2>/dev/null || sleep 5
 kubectl apply -f apps/k3s/cluster-issuer.yaml
+
+echo "Applying Wildcard Certificate..."
+kubectl apply -f apps/k3s/wildcard-cert.yaml
 
 echo ""
 echo "Headlamp:   https://dashboard.k3s.skoltun.dev (token: mise run headlamp-token)"

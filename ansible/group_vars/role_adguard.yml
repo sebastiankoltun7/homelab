@@ -2,20 +2,13 @@
 adguard_http_address: "192.168.1.101:80"
 adguard_docker_reverse_proxy_ip: "192.168.1.102"
 
-adguard_tls_server_name: "adguard.skoltun.dev"
-adguard_cert_directory: /opt/AdGuardHome/certs
 adguard_dns_ipv6: true
 adguard_admin_username: "{{ admin_username }}"
-adguard_alt_names:
-  - "skoltun.dev"
-  - "*.skoltun.dev"
-adguard_alt_ips:
-  - "{{ adguard_http_address.split(':')[0] }}"
 adguard_dns_rewrites:
-  - domain: "adguard.skoltun.dev"
+  - domain: "adguard.homelab"
     answer: "{{ adguard_http_address.split(':')[0] }}"
     enabled: true
-  - domain: "plex.skoltun.dev"
+  - domain: "plex.homelab"
     answer: "192.168.1.103"
     enabled: true
   - domain: "*.docker.skoltun.dev"

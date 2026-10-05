@@ -9,14 +9,14 @@ ingress:
   enabled: true
   ingressClassName: traefik
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
     - host: dashboard.k3s.skoltun.dev
       paths:
         - path: /
           type: Prefix
+          pathType: Prefix
   tls:
-    - secretName: headlamp-tls
+    - secretName: wildcard-skoltun-tls
       hosts:
         - dashboard.k3s.skoltun.dev
 

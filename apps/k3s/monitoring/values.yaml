@@ -122,15 +122,11 @@ grafana:
   ingress:
     enabled: true
     ingressClassName: traefik
-    labels:
-      app.kubernetes.io/part-of: traefik
     annotations:
-      cert-manager.io/cluster-issuer: letsencrypt-prod
-    hosts: [grafana.k3s.skoltun.dev]
+    hosts: [ grafana.k3s.skoltun.dev ]
     tls:
-      - secretName: grafana-tls
-        hosts:
-          - grafana.k3s.skoltun.dev
+      - secretName: wildcard-skoltun-tls
+        hosts: [ grafana.k3s.skoltun.dev ]
   grafana.ini:
     server:
       root_url: https://grafana.k3s.skoltun.dev

@@ -350,7 +350,7 @@ echo "note: monitoring PVCs survive uninstall. Reclaim with: kubectl delete pvc 
 
 [tasks."headlamp-token"]
 description = "Print a Headlamp login token"
-run = "kubectl create token headlamp-admin -n headlamp --duration=24h"
+run = "kubectl create token headlamp-admin -n headlamp --duration=8760h"
 
 [tasks."monitoring-password"]
 description = "Print the generated Grafana admin password"

@@ -1,0 +1,43 @@
+---
+- name: Ensure configuration directory exists
+  ansible.builtin.file:
+    path: /opt/AdGuardHome
+    state: directory
+    mode: '0700'
+
+- name: Check if AdGuard Home is installed
+  ansible.builtin.stat:
+    path: /opt/AdGuardHome/AdGuardHome
+  register: adguard_binary
+
+- name: Install AdGuard Home
+  when: not adguard_binary.stat.exists
+  block:
+    - name: Download AdGuard Home install script
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
+        dest: /tmp/install_adguard.sh
+        mode: "0755"
+
+    - name: Run AdGuard Home install script
+      ansible.builtin.command:
+        cmd: /tmp/install_adguard.sh -r
+        creates: /opt/AdGuardHome/AdGuardHome
+
+    - name: Remove installation script
+      ansible.builtin.file:
+        path: /tmp/install_adguard.sh
+        state: absent
+
+- name: Deploy AdGuardHome.yaml
+  ansible.builtin.template:
+    src: AdGuardHome.yml.j2
+    dest: /opt/AdGuardHome/AdGuardHome.yaml
+    mode: '0644'
+  notify: Restart AdGuard Home
+
+- name: Enable and start AdGuard Home service
+  ansible.builtin.systemd:
+    name: AdGuardHome
+    state: started
+    enabled: true

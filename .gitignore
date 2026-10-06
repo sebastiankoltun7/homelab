@@ -12,7 +12,6 @@ env/
 
 # Ansible collections
 collections/
-roles/
 
 # Temp files
 *.retry

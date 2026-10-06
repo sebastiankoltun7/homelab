@@ -1,0 +1,30 @@
+---
+- name: Configure Proxmox Host Infrastructure
+  hosts: pve
+  become: true
+  roles:
+    - plex
+
+- name: Deploy AdGuard Home LXC
+  hosts: role_adguard
+  become: true
+  roles:
+    - adguard
+
+- name: Deploy Plex Media Server LXC
+  hosts: role_plex
+  become: true
+  roles:
+    - plex
+
+- name: Configure Docker Host
+  hosts: role_docker
+  become: true
+  roles:
+    - docker
+
+- name: Configure K3s Cluster Node
+  hosts: role_k3s
+  become: true
+  roles:
+    - k3s

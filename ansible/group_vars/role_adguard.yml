@@ -9,5 +9,5 @@ adguard:
   dns_rewrites:
     "adguard.homelab": "{{ container_ip }}"
     "plex.homelab": "{{ hostvars['plex-host'].container_ip }}"
-    "*.docker.skoltun.dev": "{{ hostvars['docker-host'].ansible_host }}"
+    "*.docker.homelab": "{{ hostvars['docker-host'].ansible_host }}"
     "*.k3s.skoltun.dev": "{{ hostvars['k3s-node'].ansible_host }}"

@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License" />
 </p>
 
-![Architecture Diagram](docs/images/diagram.png)
+![Architecture Diagram](docs/images/diagram2.png)
 
 ![Dell OptiPlex Homelab](docs/images/dell_optiplex.png)
 

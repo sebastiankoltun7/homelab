@@ -1,0 +1,28 @@
+---
+# Reusable task to configure Proxmox LXC bind mounts
+# Parameters required: lxc_vmid, lxc_name, lxc_mounts, lxc_restart_handler
+
+- name: Ensure the {{ lxc_name }} container config exists
+  ansible.builtin.stat:
+    path: "/etc/pve/lxc/{{ lxc_vmid }}.conf"
+  register: lxc_cfg_file
+
+- name: Fail when the container was not created
+  ansible.builtin.fail:
+    msg: "Container {{ lxc_vmid }} ({{ lxc_name }}) is missing. Run `mise run tf-apply` first."
+  when: not lxc_cfg_file.stat.exists
+
+- name: Read current container config
+  ansible.builtin.command: cat /etc/pve/lxc/{{ lxc_vmid }}.conf
+  register: lxc_conf_output
+  changed_when: false
+
+- name: Apply bind mount points via pct
+  ansible.builtin.command: >
+    pct set {{ lxc_vmid }}
+    --{{ item.id }} {{ item.host_path }},mp={{ item.container_path }}
+  loop: "{{ lxc_mounts }}"
+  loop_control:
+    label: "{{ item.id }}: {{ item.host_path }} -> {{ item.container_path }}"
+  when: lxc_conf_output.stdout.find(item.id ~ ':') == -1
+  notify: "{{ lxc_restart_handler }}"

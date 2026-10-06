@@ -1,7 +1,6 @@
 ---
 all:
   vars:
-    ansible_user: root
     ansible_private_key_file: ~/.ssh/id_ed25519
 
   children:
@@ -9,9 +8,9 @@ all:
       hosts:
         pve-host:
           ansible_host: 192.168.1.100
+          ansible_user: root
 
-    # Group shared settings for containers managed via Proxmox remote plugin
-    proxmox_containers:
+    lxc_containers:
       vars:
         ansible_host: 192.168.1.100
         ansible_connection: community.proxmox.proxmox_pct_remote
@@ -21,18 +20,24 @@ all:
           hosts:
             adguard-host:
               proxmox_vmid: 101
+              container_ip: 192.168.1.101
+              ansible_user: root
 
         role_plex:
           hosts:
             plex-host:
               proxmox_vmid: 103
+              container_ip: 192.168.1.103
+              ansible_user: root
 
     role_docker:
       hosts:
         docker-host:
           ansible_host: 192.168.1.102
+          ansible_user: skoltun
 
     role_k3s:
       hosts:
         k3s-node:
           ansible_host: 192.168.1.104
+          ansible_user: skoltun

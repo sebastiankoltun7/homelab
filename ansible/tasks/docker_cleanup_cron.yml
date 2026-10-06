@@ -13,8 +13,8 @@
 - name: Add docker prune to crontab
   ansible.builtin.cron:
     name: "Docker system prune"
-    minute: "{{ docker_cleanup_cron_minute }}"
-    hour: "{{ docker_cleanup_cron_hour }}"
-    weekday: "{{ docker_cleanup_cron_weekday }}"
-    job: "{{ docker_cleanup_command }}"
+    minute: "{{ docker.cleanup.minute }}"
+    hour: "{{ docker.cleanup.hour }}"
+    weekday: "{{ docker.cleanup.weekday }}"
+    job: "{{ docker.cleanup.command }}"
     user: "root"

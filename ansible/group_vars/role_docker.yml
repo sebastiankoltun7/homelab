@@ -1,25 +1,18 @@
-# Connection
-ansible_user: "{{ admin_username }}"
-
-# Disk configuration
-docker_disk_id: "/dev/disk/by-id/virtio-DOCKER-DATA"
-docker_mount_point: "/mnt/docker-data"
-
-# Application paths
-docker_engine_root: "{{ docker_mount_point }}/docker-engine"
-containerd_root: "{{ docker_mount_point }}/containerd-data"
-
-# Docker Daemon Options
-docker_daemon_options:
-  data-root: "{{ docker_engine_root }}"
-  log-driver: "json-file"
-  log-opts:
-    max-size: "10m"
-    max-file: "3"
-
-# Docker Cleanup Settings
-# Sunday at 01:00
-docker_cleanup_cron_minute: "0"
-docker_cleanup_cron_hour: "1"
-docker_cleanup_cron_weekday: "0"
-docker_cleanup_command: "/usr/bin/docker system prune -a -f --volumes"
+# Docker Configuration
+docker:
+  user: "{{ admin_username }}"
+  disk_id: "/dev/disk/by-id/virtio-DOCKER-DATA"
+  mount_point: "/mnt/docker-data"
+  engine_root: "{{ docker.mount_point }}/docker-engine"
+  containerd_root: "{{ docker.mount_point }}/containerd-data"
+  daemon_options:
+    data-root: "{{ docker.engine_root }}"
+    log-driver: "json-file"
+    log-opts:
+      max-size: "10m"
+      max-file: "3"
+  cleanup:
+    minute: "0"
+    hour: "1"
+    weekday: "0"
+    command: "/usr/bin/docker system prune -a -f --volumes"

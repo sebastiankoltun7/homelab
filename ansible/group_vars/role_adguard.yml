@@ -1,19 +1,11 @@
-# AdGuard Home
-adguard_http_address: "192.168.1.101:80"
-adguard_docker_reverse_proxy_ip: "192.168.1.102"
-
-adguard_dns_ipv6: true
-adguard_admin_username: "{{ admin_username }}"
-adguard_dns_rewrites:
-  - domain: "adguard.homelab"
-    answer: "{{ adguard_http_address.split(':')[0] }}"
-    enabled: true
-  - domain: "plex.homelab"
-    answer: "192.168.1.103"
-    enabled: true
-  - domain: "*.docker.skoltun.dev"
-    answer: "{{ adguard_docker_reverse_proxy_ip }}"
-    enabled: true
-  - domain: "*.k3s.skoltun.dev"
-    answer: "192.168.1.104"
-    enabled: true
+# AdGuard Home Configuration
+adguard:
+  http_address: "{{ container_ip }}:80"
+  docker_reverse_proxy_ip: "{{ hostvars['docker-host'].ansible_host }}"
+  dns_ipv6: true
+  admin_username: "{{ admin_username }}"
+  dns_rewrites:
+    "adguard.homelab": "{{ container_ip }}"
+    "plex.homelab": "{{ hostvars['plex-host'].container_ip }}"
+    "*.docker.skoltun.dev": "{{ hostvars['docker-host'].ansible_host }}"
+    "*.k3s.skoltun.dev": "{{ hostvars['k3s-node'].ansible_host }}"

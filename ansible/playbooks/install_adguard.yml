@@ -1,6 +1,6 @@
 ---
 - name: AdGuard Home installation
-  hosts: role_adguard
+  hosts: adguard-host
   gather_facts: false
 
   tasks:

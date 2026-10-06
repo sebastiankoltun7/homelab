@@ -6,20 +6,20 @@
   tasks:
     - name: Create mount point
       ansible.builtin.file:
-        path: "{{ docker_mount_point }}"
+        path: "{{ docker.mount_point }}"
         state: directory
         mode: "0755"
 
     - name: Format docker data disk
       community.general.filesystem:
         fstype: ext4
-        dev: "{{ docker_disk_id }}"
+        dev: "{{ docker.disk_id }}"
         force: false
 
     - name: Mount docker data disk
       ansible.posix.mount:
-        path: "{{ docker_mount_point }}"
-        src: "{{ docker_disk_id }}"
+        path: "{{ docker.mount_point }}"
+        src: "{{ docker.disk_id }}"
         fstype: ext4
         opts: discard,defaults
         state: mounted
@@ -32,23 +32,23 @@
         group: root
         mode: "0711"
       loop:
-        - "{{ docker_engine_root }}"
-        - "{{ containerd_root }}"
+        - "{{ docker.engine_root }}"
+        - "{{ docker.containerd_root }}"
 
     - name: Run Docker installation role
       ansible.builtin.include_role:
         name: geerlingguy.docker
       vars:
-        docker_daemon_config: "{{ docker_daemon_options }}"
+        docker_daemon_config: "{{ docker.daemon_options }}"
         docker_install_compose: true
         docker_compose_package: docker-compose-plugin
-        docker_users: ["{{ ansible_user }}"]
+        docker_users: ["{{ docker.user }}"]
 
     - name: Configure containerd root directory
       ansible.builtin.copy:
         content: |
           version = 2
-          root = "{{ containerd_root }}"
+          root = "{{ docker.containerd_root }}"
         dest: /etc/containerd/config.toml
         owner: root
         group: root

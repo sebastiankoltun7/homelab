@@ -4,17 +4,16 @@
   gather_facts: false
 
   vars:
-    # Dynamically pull VMID from inventory
-    plex_vmid: "{{ hostvars[groups['role_plex'][0]]['proxmox_vmid'] }}"
-    plex_config_file: "/etc/pve/lxc/{{ plex_vmid }}.conf"
+    plex_vmid: "{{ hostvars['plex-host'].proxmox_vmid }}"
+    plex_data: "{{ hostvars['plex-host'].plex }}"
 
     plex_mounts:
-      - id: "mp0"
-        host_path: "/mnt/pve/ssd-backup/PlexMedia"
-        container_path: "/PlexMedia"
-      - id: "mp1"
-        host_path: "/mnt/pve/ssd-backup/PlexConfig"
-        container_path: "/plex-config"
+      - id: "{{ plex_data.mounts.media.id }}"
+        host_path: "{{ plex_data.mounts.media.host_path }}"
+        container_path: "{{ plex_data.mounts.media.container_path }}"
+      - id: "{{ plex_data.mounts.config.id }}"
+        host_path: "{{ plex_data.mounts.config.host_path }}"
+        container_path: "{{ plex_data.mounts.config.container_path }}"
 
   tasks:
     - name: Ensure external disks configuration is provided
@@ -28,40 +27,23 @@
       loop_control:
         label: "{{ item.name }}"
 
-    # --- Proxmox LXC Configuration (Bind Mounts) ---
-    - name: Ensure the plex container config exists
-      ansible.builtin.stat:
-        path: "{{ plex_config_file }}"
-      register: plex_cfg
-
-    - name: Fail when the plex container was not created
-      ansible.builtin.fail:
-        msg: "Container {{ plex_vmid }} is missing. Run `mise run tf-apply` first."
-      when: not plex_cfg.stat.exists
-
-    - name: Read current container config
-      ansible.builtin.command: cat {{ plex_config_file }}
-      register: plex_conf
-      changed_when: false
-
-    - name: Apply bind mount points via pct
-      ansible.builtin.command: >
-        pct set {{ plex_vmid }}
-        --{{ item.id }} {{ item.host_path }},mp={{ item.container_path }}
-      loop: "{{ plex_mounts }}"
-      loop_control:
-        label: "{{ item.id }}: {{ item.host_path }} -> {{ item.container_path }}"
-      when: plex_conf.stdout.find(item.id ~ ':') == -1
-      notify: Restart plex container
+    - name: Configure LXC bind mounts for Plex container
+      ansible.builtin.include_tasks: "../tasks/configure_lxc_bind_mounts.yml"
+      vars:
+        lxc_vmid: "{{ plex_vmid }}"
+        lxc_name: "Plex"
+        lxc_mounts: "{{ plex_mounts }}"
+        lxc_restart_handler: "Restart plex container"
 
   handlers:
     - name: Stop plex container
       ansible.builtin.command: pct stop {{ plex_vmid }}
-      listen: Restart plex container
+      listen: "Restart plex container"
       changed_when: true
+
     - name: Start plex container
       ansible.builtin.command: pct start {{ plex_vmid }}
-      listen: Restart plex container
+      listen: "Restart plex container"
       changed_when: true
 
 
@@ -69,28 +51,20 @@
   hosts: role_plex
   gather_facts: false
 
-  vars:
-    plex_media_mount: "/PlexMedia"
-    plex_config_mount: "/plex-config"
-    plex_override_dir: "/etc/systemd/system/plexmediaserver.service.d"
-    plex_override_file: "/etc/systemd/system/plexmediaserver.service.d/override.conf"
-    plex_apt_repo_file: "/etc/apt/sources.list.d/plexmediaserver.list"
-    plex_apt_repo: "deb [trusted=yes] https://downloads.plex.tv/repo/deb public main"
-
   tasks:
     - name: Verify external mounts are present
       ansible.builtin.command: findmnt -n {{ item }}
       loop:
-        - "{{ plex_media_mount }}"
-        - "{{ plex_config_mount }}"
+        - "{{ plex.mounts.media.container_path }}"
+        - "{{ plex.mounts.config.container_path }}"
       changed_when: false
       failed_when: mount_check.rc != 0
       register: mount_check
 
     - name: Add Plex apt repository
       ansible.builtin.copy:
-        content: "{{ plex_apt_repo }}\n"
-        dest: "{{ plex_apt_repo_file }}"
+        content: "{{ plex.apt.repo }}\n"
+        dest: "{{ plex.apt.repo_file }}"
         mode: "0644"
 
     - name: Install dependencies
@@ -104,13 +78,13 @@
 
     - name: Install Plex Media Server
       ansible.builtin.apt:
-        name: plexmediaserver
+        name: "{{ plex.package_name }}"
         state: present
         update_cache: true
 
     - name: Ensure systemd override directory exists
       ansible.builtin.file:
-        path: "{{ plex_override_dir }}"
+        path: "{{ plex.service.override_dir }}"
         state: directory
         mode: "0755"
 
@@ -118,20 +92,20 @@
       ansible.builtin.copy:
         content: |
           [Service]
-          Environment="PLEX_MEDIA_SERVER_APPLICATION_SUPPORT_DIR=/plex-config"
-        dest: "{{ plex_override_file }}"
+          Environment="PLEX_MEDIA_SERVER_APPLICATION_SUPPORT_DIR={{ plex.mounts.config.container_path }}"
+        dest: "{{ plex.service.override_file }}"
         mode: "0644"
       notify: Reload and restart Plex Media Server
 
     - name: Enable and start Plex Media Server
       ansible.builtin.systemd:
-        name: plexmediaserver
+        name: "{{ plex.package_name }}"
         state: started
         enabled: true
 
   handlers:
     - name: Reload and restart Plex Media Server
       ansible.builtin.systemd:
-        name: plexmediaserver
+        name: "{{ plex.package_name }}"
         state: restarted
         daemon_reload: true

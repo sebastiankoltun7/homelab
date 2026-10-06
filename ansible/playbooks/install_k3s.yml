@@ -24,36 +24,34 @@
         - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
         - { key: 'net.ipv4.ip_forward', value: '1' }
 
-    # --- NEW: STORAGE SETUP FOR 60GB SECONDARY DISK ---
     - name: Create filesystem on secondary disk if not present
       ansible.builtin.filesystem:
         fstype: ext4
-        dev: /dev/vdb
+        dev: "{{ k3s.disk_id }}"
 
     - name: Ensure mount directory exists
       ansible.builtin.file:
-        path: /mnt/k3s-data
+        path: "{{ k3s.mount_point }}"
         state: directory
         mode: '0755'
 
-    - name: Mount secondary disk to /mnt/k3s-data
-      ansible.builtin.mount:
-        path: /mnt/k3s-data
-        src: /dev/vdb
+    - name: Mount secondary disk to K3s data directory
+      ansible.posix.mount:
+        path: "{{ k3s.mount_point }}"
+        src: "{{ k3s.disk_id }}"
         fstype: ext4
         opts: defaults
         state: mounted
-    # --------------------------------------------------
 
     - name: Check if K3s is already installed
       ansible.builtin.stat:
         path: /usr/local/bin/k3s
       register: k3s_binary
 
-    - name: Install K3s server (Control Plane with Dedicated Data Disk)
+    - name: Install K3s server
       when: not k3s_binary.stat.exists
       ansible.builtin.shell: |
-        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --node-ip={{ ansible_host }} --data-dir=/mnt/k3s-data --write-kubeconfig-mode 644" sh -
+        curl -sfL {{ k3s.install_script_url }} | INSTALL_K3S_EXEC="{{ k3s.exec_options }}" sh -
       args:
         executable: /bin/bash
 
@@ -77,5 +75,5 @@
     - name: Fetch kubeconfig to local playbook directory
       ansible.builtin.fetch:
         src: /etc/rancher/k3s/k3s.yaml
-        dest: "{{ playbook_dir }}/files/k3s.yaml"
+        dest: "{{ k3s.kubeconfig_dest }}"
         flat: true

@@ -1,2 +1,6 @@
-# Connection
-ansible_user: "{{ admin_username }}"
+k3s:
+  install_script_url: "https://get.k3s.io"
+  disk_id: "/dev/vdb"
+  mount_point: "/mnt/k3s-data"
+  exec_options: "server --node-ip={{ ansible_host }} --data-dir=/mnt/k3s-data --write-kubeconfig-mode 644"
+  kubeconfig_dest: "{{ inventory_dir }}/../out/k3s.yaml"

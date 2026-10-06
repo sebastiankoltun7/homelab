@@ -1,5 +1,7 @@
 # AdGuard Home Configuration
 adguard:
+  install_script_url: https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
+  service_name: AdGuardHome
   http_address: "{{ container_ip }}:80"
   docker_reverse_proxy_ip: "{{ hostvars['docker-host'].ansible_host }}"
   dns_ipv6: true

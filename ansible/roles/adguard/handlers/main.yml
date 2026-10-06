@@ -1,5 +1,5 @@
 ---
 - name: Restart AdGuard Home
   ansible.builtin.systemd:
-    name: AdGuardHome
+    name: "{{ adguard.service_name }}"
     state: restarted

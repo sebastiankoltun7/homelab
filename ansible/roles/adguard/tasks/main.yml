@@ -15,7 +15,7 @@
   block:
     - name: Download AdGuard Home install script
       ansible.builtin.get_url:
-        url: https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh
+        url: "{{ adguard.install_script_url }}"
         dest: /tmp/install_adguard.sh
         mode: "0755"
 
@@ -38,6 +38,6 @@
 
 - name: Enable and start AdGuard Home service
   ansible.builtin.systemd:
-    name: AdGuardHome
+    name: "{{ adguard.service_name }}"
     state: started
     enabled: true

@@ -15,9 +15,12 @@
     state: present
     reload: true
   loop:
-    - { key: 'net.bridge.bridge-nf-call-iptables', value: '1' }
-    - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
-    - { key: 'net.ipv4.ip_forward', value: '1' }
+    - key: 'net.bridge.bridge-nf-call-iptables'
+      value: '1'
+    - key: 'net.bridge.bridge-nf-call-ip6tables'
+      value: '1'
+    - key: 'net.ipv4.ip_forward'
+      value: '1'
 
 - name: Create filesystem on secondary disk if not present
   ansible.builtin.filesystem:
@@ -37,6 +40,7 @@
     fstype: ext4
     opts: defaults
     state: mounted
+  notify: Restart k3s
 
 - name: Check if K3s is already installed
   ansible.builtin.stat:
@@ -49,6 +53,7 @@
     curl -sfL {{ k3s.install_script_url }} | INSTALL_K3S_EXEC="{{ k3s.exec_options }}" sh -
   args:
     executable: /bin/bash
+  notify: Restart k3s
 
 - name: Ensure K3s service is started and enabled
   ansible.builtin.systemd:

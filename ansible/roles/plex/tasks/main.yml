@@ -1,0 +1,82 @@
+---
+# 1. Proxmox Host Tasks (runs on Proxmox host 'pve')
+- block:
+    - name: Ensure external disks configuration is provided
+      ansible.builtin.fail:
+        msg: "Set `external_disks` in ansible/group_vars/pve.yml"
+      when: external_disks | default([]) | length == 0
+
+    - name: Configure each external disk
+      ansible.builtin.include_tasks: configure_external_disk.yml
+      loop: "{{ external_disks }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Configure LXC bind mounts for Plex container
+      ansible.builtin.include_tasks: configure_lxc_bind_mounts.yml
+      vars:
+        lxc_vmid: "{{ hostvars['plex-host'].proxmox_vmid }}"
+        lxc_name: "Plex"
+        lxc_mounts:
+          - id: "{{ hostvars['plex-host'].plex.mounts.media.id }}"
+            host_path: "{{ hostvars['plex-host'].plex.mounts.media.host_path }}"
+            container_path: "{{ hostvars['plex-host'].plex.mounts.media.container_path }}"
+          - id: "{{ hostvars['plex-host'].plex.mounts.config.id }}"
+            host_path: "{{ hostvars['plex-host'].plex.mounts.config.host_path }}"
+            container_path: "{{ hostvars['plex-host'].plex.mounts.config.container_path }}"
+        lxc_restart_handler: "Restart plex container"
+  when: inventory_hostname in groups['pve'] or ('pve' in group_names)
+
+# 2. Plex LXC Container Tasks (runs inside 'role_plex')
+- block:
+    - name: Verify external mounts are present
+      ansible.builtin.command: findmnt -n {{ item }}
+      loop:
+        - "{{ plex.mounts.media.container_path }}"
+        - "{{ plex.mounts.config.container_path }}"
+      changed_when: false
+      failed_when: mount_check.rc != 0
+      register: mount_check
+
+    - name: Add Plex apt repository
+      ansible.builtin.copy:
+        content: "{{ plex.apt.repo }}\n"
+        dest: "{{ plex.apt.repo_file }}"
+        mode: "0644"
+
+    - name: Install dependencies
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Install Plex Media Server
+      ansible.builtin.apt:
+        name: "{{ plex.package_name }}"
+        state: present
+        update_cache: true
+
+    - name: Ensure systemd override directory exists
+      ansible.builtin.file:
+        path: "{{ plex.service.override_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Configure Plex data directory on external disk
+      ansible.builtin.copy:
+        content: |
+          [Service]
+          Environment="PLEX_MEDIA_SERVER_APPLICATION_SUPPORT_DIR={{ plex.mounts.config.container_path }}"
+        dest: "{{ plex.service.override_file }}"
+        mode: "0644"
+      notify: Reload and restart Plex Media Server
+
+    - name: Enable and start Plex Media Server
+      ansible.builtin.systemd:
+        name: "{{ plex.package_name }}"
+        state: started
+        enabled: true
+  when: inventory_hostname in groups['role_plex'] or ('role_plex' in group_names)

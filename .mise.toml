@@ -16,7 +16,7 @@ DOCKER_USER = "skoltun"
 DOCKER_HOST_IP = "192.168.1.102"
 PROXMOX_HOST_IP = "192.168.1.100"
 K3S_HOST_IP = "192.168.1.104"
-KUBECONFIG_SRC = "{{env.ANSIBLE_DIR}}/playbooks/files/k3s.yaml"
+KUBECONFIG_SRC = "{{env.ANSIBLE_DIR}}/out/k3s.yaml"
 HELM_DIFF_KEYRING = "keys/helm-diff.gpg"
 BW_SSH_ITEM = "homelab-ssh-key"
 BW_TF_ITEM = "hcp-terraform-token"
@@ -145,53 +145,33 @@ fi
 """
 
 [tasks."ansible-all"]
-description = "Run all playbooks (adguard + docker + plex + k3s)"
+description = "Run master site.yml playbook"
 depends = ["ssh-accept-keys"]
-run = """
-echo "Fetching Cloudflare token from Bitwarden..."
-CF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_CF_ITEM}}" ".login.password")
-
-cd {{env.ANSIBLE_DIR}}
-.venv/bin/ansible-playbook playbooks/install_adguard.yml -e "cloudflare_api_token=$CF_TOKEN"
-.venv/bin/ansible-playbook playbooks/install_docker.yml
-.venv/bin/ansible-playbook playbooks/install_plex.yml
-.venv/bin/ansible-playbook playbooks/install_k3s.yml
-"""
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook site.yml"
 
 [tasks."ansible-adguard"]
-description = "Deploy AdGuard Home with Let's Encrypt (fetching token from Bitwarden)"
+description = "Deploy AdGuard Home"
 depends = ["ssh-accept-keys"]
-run = """
-echo "Fetching Cloudflare token from Bitwarden..."
-CF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_CF_ITEM}}" ".login.password")
-cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_adguard.yml -e "cloudflare_api_token=$CF_TOKEN"
-"""
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook site.yml --limit role_adguard"
 
 [tasks."ansible-docker"]
 description = "Deploy Docker host"
 depends = ["ssh-accept-keys"]
-run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_docker.yml"
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook site.yml --limit role_docker"
 
 [tasks."ansible-plex"]
 description = "Deploy Plex Media Server"
 depends = ["ssh-accept-keys"]
-run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_plex.yml"
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook site.yml --limit pve,role_plex"
 
 [tasks."ansible-k3s"]
 description = "Deploy K3s single-node"
 depends = ["ssh-accept-keys"]
-run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3s.yml"
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook site.yml --limit role_k3s"
 
 [tasks."ansible-dry-run"]
-description = "Dry-run all playbooks"
-run = """
-CF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_CF_ITEM}}" ".login.password" 2>/dev/null || echo "dummy-token")
-cd {{env.ANSIBLE_DIR}}
-.venv/bin/ansible-playbook playbooks/install_adguard.yml --check -e "cloudflare_api_token=$CF_TOKEN"
-.venv/bin/ansible-playbook playbooks/install_docker.yml --check
-.venv/bin/ansible-playbook playbooks/install_plex.yml --check
-.venv/bin/ansible-playbook playbooks/install_k3s.yml --check
-"""
+description = "Dry-run master site.yml playbook"
+run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook site.yml --check"
 
 # ── Combined ───────────────────────────────────
 
@@ -348,6 +328,9 @@ echo "Waiting for cert-manager CRDs to be ready, then applying ClusterIssuer..."
 kubectl wait --for=condition=established --timeout=60s crd/clusterissuers.cert-manager.io 2>/dev/null || sleep 5
 kubectl apply -f apps/k3s/cluster-issuer.yaml
 
+echo "Applying Wildcard Certificate..."
+kubectl apply -f apps/k3s/wildcard-cert.yaml
+
 echo ""
 echo "Headlamp:   https://dashboard.k3s.skoltun.dev (token: mise run headlamp-token)"
 echo "Grafana:    https://grafana.k3s.skoltun.dev    (user: admin, password: mise run monitoring-password)"
@@ -367,7 +350,7 @@ echo "note: monitoring PVCs survive uninstall. Reclaim with: kubectl delete pvc 
 
 [tasks."headlamp-token"]
 description = "Print a Headlamp login token"
-run = "kubectl create token headlamp-admin -n headlamp --duration=24h"
+run = "kubectl create token headlamp-admin -n headlamp --duration=8760h"
 
 [tasks."monitoring-password"]
 description = "Print the generated Grafana admin password"

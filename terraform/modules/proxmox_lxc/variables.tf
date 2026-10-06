@@ -83,14 +83,6 @@ variable "startup_order" {
   description = "Startup order of the container (null disables the startup block)"
 }
 
-variable "device_passthrough" {
-  type = list(object({
-    path = string
-  }))
-  default     = []
-  description = "Devices to pass through to the container"
-}
-
 variable "template_file_id" {
   type        = string
   default     = null

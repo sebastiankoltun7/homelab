@@ -5,7 +5,7 @@ Two mechanisms, and only two:
 | Where | How | State lives in |
 | --- | --- | --- |
 | Docker VM (`.102`) | `docker compose` | `apps/docker/<name>/` |
-| K3s cluster (`.104`) | `helmfile` | `apps/k3s/helmfile.yaml` |
+| K3s cluster (`.104`) | `helmfile` | the helmfile state file under `apps/k3s/` |
 
 Anything that does not fit one of these two does not belong in this repo. Individual apps are not
 documented here — they are described by their compose file, their `values.yaml`, and the state
@@ -13,96 +13,76 @@ file entry.
 
 ## Docker Compose apps
 
-`apps/docker/<name>/docker-compose.yml`. Every app must attach to the external `proxy-net`
-bridge, which is created by Ansible:
+Each app gets its own directory under `apps/docker/` holding a compose file. Every app must attach
+to the external `proxy-net` bridge (created by Ansible) and declare a `VIRTUAL_HOST` of
+`<name>.docker.skoltun.dev`, which is how the reverse proxy on the Docker VM routes to it.
 
-```yaml
-networks:
-  proxy-net:
-    external: true
-services:
-  myapp:
-    networks: [proxy-net]
-    environment:
-      VIRTUAL_HOST: myapp.docker.skoltun.dev
-```
-
-Deploy and check:
+Point your local Docker client at the Docker VM (an SSH docker context is the usual way), then:
 
 ```bash
-mise run docker-context                                # once per machine
-docker --context homelab compose -f apps/docker/<name>/docker-compose.yml up -d
-docker --context homelab compose -f apps/docker/<name>/docker-compose.yml logs -f
+docker compose -f apps/docker/<name>/docker-compose.yml up -d
+docker compose -f apps/docker/<name>/docker-compose.yml logs -f
 ```
 
-`nginx-proxy` auto-discovers anything on `proxy-net` and routes by `VIRTUAL_HOST`. Hostnames under
-`*.docker.skoltun.dev` already resolve to the Docker VM via an AdGuard wildcard, so new apps usually
-need no DNS change.
+The reverse proxy auto-discovers anything on `proxy-net` and routes by `VIRTUAL_HOST`. Hostnames
+under `*.docker.skoltun.dev` already resolve to the Docker VM via an AdGuard wildcard, so new apps
+usually need no DNS change.
 
 Secrets go in `.env`, which is gitignored. Commit `.env.template` with placeholder values only.
 
 ## K3s apps (helmfile)
 
-All releases are declared in one state file, [`k3s/helmfile.yaml`](k3s/helmfile.yaml), with
-per-app overrides in `apps/k3s/<name>/values.yaml`. Values paths resolve relative to the state
-file, so the commands below work from anywhere.
+All releases are declared in one helmfile state file, with per-app overrides in a `values.yaml`
+inside a directory named after the release. Values paths resolve relative to the state file, so the
+commands below work from anywhere.
+
+Prerequisites: a kubeconfig pointing at the cluster, `helm`, `helmfile` and `kubectl` on your PATH,
+and the `helm-diff` plugin installed (helmfile implements `apply` as diff-then-sync, so it is not
+optional):
 
 ```bash
-mise install          # once: helmfile + kubectl + helm, pinned in .mise.toml
-mise run helm-diff     # once: the helm-diff plugin helmfile needs
-mise run kubectl-config # once: ~/.kube/config from the fetched k3s.yaml
-mise run apps-diff     # preview what would change
-mise run apps          # install/upgrade everything (idempotent)
-mise run apps-list     # list declared releases
-mise run apps-destroy  # uninstall everything
+helm plugin install https://github.com/databus23/helm-diff
 ```
 
-`mise run all` runs `apps` for you after the cluster exists, after `helm-diff` and `kubectl-config`.
-
-`helm`, `helmfile` and `kubectl` come from [`.mise.toml`](../.mise.toml), and mise tasks run with
-those versions in `PATH`, so they do not depend on your shell having run `mise activate`. When
-calling helmfile directly, use `mise exec --` (or run it in an activated shell):
+Deploy and inspect:
 
 ```bash
-mise exec -- helmfile --file apps/k3s/helmfile.yaml diff   -l name=<release>
-mise exec -- helmfile --file apps/k3s/helmfile.yaml apply  -l name=<release>
-mise exec -- helmfile --file apps/k3s/helmfile.yaml destroy -l name=<release>
+helmfile --file apps/k3s/helmfile.yaml diff    # preview what would change
+helmfile --file apps/k3s/helmfile.yaml apply   # install/upgrade everything (idempotent)
+helmfile --file apps/k3s/helmfile.yaml list    # list declared releases
+helmfile --file apps/k3s/helmfile.yaml destroy # uninstall everything
 ```
 
-`mise run apps` prints the app URLs and how to fetch their credentials when it finishes.
+Scope to a single release with `-l name=<release>` on any of those commands.
+
+The apply step does more than sync charts: it also stores the Cloudflare API token as a Kubernetes
+secret (outside git) and applies the certificate wiring described below.
 
 ## TLS for the ingresses
 
-`*.k3s.skoltun.dev` resolves through the AdGuard wildcard, and every ingress that declares a `tls`
-block gets a **Let's Encrypt** certificate from cert-manager — no self-signed certificates and
-nothing to trust on client machines. Three pieces make that work:
+`*.k3s.skoltun.dev` resolves through the AdGuard wildcard, and every ingress that declares TLS is
+served with a **Let's Encrypt** certificate — no self-signed certificates and nothing to trust on
+client machines. Three pieces make that work:
 
-1. **cert-manager** is the first release in `k3s/helmfile.yaml` (chart `jetstack/cert-manager`), so it
-   is installed before anything that references a `ClusterIssuer`.
-2. **The Cloudflare API token** is read from Bitwarden (item `Cloudflare token (HomeLab)`) by
-   `mise run apps` and stored as the `cloudflare-api-token-secret` secret in the `cert-manager`
-   namespace. That step lives in the task, not in the state file, so the token never lands in git.
-3. **The ClusterIssuer** in [`k3s/cluster-issuer.yaml`](k3s/cluster-issuer.yaml) (`letsencrypt-prod`,
-   DNS-01 + Cloudflare) is applied by `mise run apps` *after* the helmfile sync, because it needs the
-   CRDs cert-manager installs.
+1. **cert-manager** is installed before anything that references a `ClusterIssuer`, and
+   **reflector** runs alongside it to copy secrets between namespaces.
+2. **The Cloudflare API token** lives as a secret in the `cert-manager` namespace, created outside
+   the helmfile state so the token never lands in git. It must be allowed to edit DNS for the zone.
+3. **A single wildcard certificate** for the domain and its K3s subdomains is requested through a
+   DNS-01 challenge by a `ClusterIssuer`, applied *after* the helmfile sync because it needs the
+   CRDs cert-manager installs, followed by the certificate resource itself. Reflector mirrors the
+   resulting TLS secret (`wildcard-skoltun-tls`) into every namespace, so an ingress only has to
+   reference it.
 
-To give a release a certificate, add to its `values.yaml`:
+To give a release a certificate, enable its ingress with the host you route and point its TLS entry
+at that mirrored secret instead of declaring a per-ingress certificate.
 
-```yaml
-ingress:
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-  tls:
-    - secretName: myapp-tls
-      hosts: [myapp.k3s.skoltun.dev]
-```
-
-DNS-01 needs no inbound port 80 and works from a private LAN, but it does require the Cloudflare
-token to be allowed to edit DNS for the zone. An ingress without a `tls` block keeps Traefik's
-self-signed default — that is why `grafana-prometheus.k3s.skoltun.dev` still shows a browser warning.
+DNS-01 needs no inbound port 80 and works from a private LAN. An ingress without TLS keeps
+Traefik's self-signed default — that is why `grafana-prometheus.k3s.skoltun.dev` still shows a
+browser warning.
 
 ```bash
-kubectl get certificate          # headlamp-tls and grafana-tls should be Ready True
+kubectl get certificate          # the wildcard certificate should be Ready True
 kubectl describe clusterissuer letsencrypt-prod
 ```
 
@@ -111,60 +91,48 @@ kubectl describe clusterissuer letsencrypt-prod
 Nothing here is stored in the repo. Read the credentials out of the cluster:
 
 ```bash
-mise run headlamp-token       # Headlamp login token, valid 24h
-mise run monitoring-password  # generated Grafana admin password
+kubectl create token headlamp-admin -n headlamp --duration=24h        # Headlamp token, valid 24h
+kubectl get secret monitoring-grafana -n monitoring \
+  -o jsonpath='{.data.admin-password}' | base64 -d; echo              # Grafana admin password
 ```
 
 | Service | URL | Login |
 |---------|-----|-------|
-| Headlamp | `https://dashboard.k3s.skoltun.dev` | paste the `headlamp-token` output into the token login box |
-| Grafana | `https://grafana.k3s.skoltun.dev` | user `admin`, password from `monitoring-password` |
+| Headlamp | `https://dashboard.k3s.skoltun.dev` | paste the token into the token login box |
+| Grafana | `https://grafana.k3s.skoltun.dev` | user `admin`, password from the secret above |
 | Prometheus | `https://grafana-prometheus.k3s.skoltun.dev` | none |
 
-Headlamp's token comes from the `headlamp-admin` service account bound to `cluster-admin` in
-`k3s/headlamp/values.yaml`, so re-run `mise run headlamp-token` whenever the 24h one expires.
-Grafana's password is generated by the chart and stored in the `monitoring-grafana` secret; it only
-changes if the Grafana PVC is deleted.
+Headlamp's token comes from the `headlamp-admin` service account, which is bound to
+`cluster-admin`, so it is as powerful as root in the cluster and expires after 24h — mint a new one
+when it does. Grafana's password is generated by the chart and kept in a cluster secret;
+reinstalling the stack mints a new one, while the dashboard data on its PVC survives.
 
-Headlamp and Grafana get Let's Encrypt certificates (see [TLS for the ingresses](#tls-for-the-ingresses)).
-Prometheus has no `tls` block, so it keeps Traefik's self-signed default and the browser warns once
-per host until you accept it.
+Headlamp and Grafana are served with the cluster's wildcard certificate (see
+[TLS for the ingresses](#tls-for-the-ingresses)). Prometheus has no TLS configured, so it keeps
+Traefik's self-signed default and the browser warns once per host until you accept it.
 
 ## Managing releases
 
 ### Adding a release
 
-Add a repository (once) and a release entry, then `mise run apps-diff` to review:
+Declare a repository (once) and a release entry in the helmfile state file: the chart from that
+repository, a pinned chart version, a namespace that is created if missing, and a reference to a
+values file in a directory named after the release. Then run `helmfile diff` to review.
 
-```yaml
-repositories:
-  - name: <repo>
-    url: https://<repo-url>
-
-releases:
-  - name: <release>
-    installed: true
-    namespace: <namespace>
-    createNamespace: true
-    chart: <repo>/<chart>
-    version: '{{ env "<RELEASE>_CHART_VERSION" | default "<pinned>" }}'
-    values:
-      - <release>/values.yaml
-```
-
-Pin the chart version in the state file. The env-var indirection is optional but lets you try a
-version without editing the file:
+Pin the chart version in the state file. The version is read from an environment variable named
+after the release (`<RELEASE>_CHART_VERSION`, uppercased) with the pinned version as fallback, so
+you can try a version without editing the file:
 
 ```bash
-<RELEASE>_CHART_VERSION=1.2.3 mise run apps-diff
+MYAPP_CHART_VERSION=1.2.3 helmfile --file apps/k3s/helmfile.yaml diff
 ```
 
 ### Retiring a release
 
-Set `installed: false` and run `mise run apps`. The diff reports the release as `DELETED` and the
-apply uninstalls it; the entry stays in the file so flipping it back redeploys.
+Set the release's `installed:` flag to `false` and run the apply. The diff reports the release as
+`DELETED` and the apply uninstalls it; the entry stays in the file so flipping it back redeploys.
 
-Use `condition:` instead if you only want helmfile to ignore an entry without uninstalling it.
+Use a `condition:` instead if you only want helmfile to ignore an entry without uninstalling it.
 
 ## Gotchas
 
@@ -180,12 +148,11 @@ These are properties of k3s and Helm, not of any particular app:
 - **k3s `local-path` PVCs cannot be expanded in place** (`allowVolumeExpansion=false`,
   `reclaimPolicy=Delete`), and they are not removed when a release is uninstalled. Reclaim them
   with `kubectl delete pvc -n <namespace> --all`, which discards the data.
-- **An ingress without a `tls` block gets Traefik's self-signed certificate**, so browsers warn on
-  that hostname. Add the `tls` block and the `cert-manager.io/cluster-issuer` annotation to get a
-  trusted certificate instead.
-- **`apps-destroy` does not remove the `ClusterIssuer` or the Cloudflare secret** — both live outside
-  the helmfile state. `kubectl delete clusterissuer letsencrypt-prod` and
-  `kubectl -n cert-manager delete secret cloudflare-api-token-secret` if you want a clean slate.
+- **An ingress without TLS gets Traefik's self-signed certificate**, so browsers warn on that
+  hostname. Reference the mirrored wildcard secret in the ingress TLS entry instead.
+- **`helmfile destroy` does not remove the `ClusterIssuer`, the wildcard certificate or the
+  Cloudflare secret** — all three live outside the helmfile state. Delete them with `kubectl` if
+  you want a clean slate.
 
 ## Which mechanism?
 

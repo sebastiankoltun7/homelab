@@ -1,0 +1,104 @@
+---
+- name: Create mount point
+  ansible.builtin.file:
+    path: "{{ docker.mount_point }}"
+    state: directory
+    mode: "0755"
+
+- name: Format docker data disk
+  community.general.filesystem:
+    fstype: ext4
+    dev: "{{ docker.disk_id }}"
+    force: false
+
+- name: Mount docker data disk
+  ansible.posix.mount:
+    path: "{{ docker.mount_point }}"
+    src: "{{ docker.disk_id }}"
+    fstype: ext4
+    opts: discard,defaults
+    state: mounted
+
+- name: Ensure dedicated directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0711"
+  loop:
+    - "{{ docker.engine_root }}"
+    - "{{ docker.containerd_root }}"
+
+- name: Ensure Nginx certificates directory exists
+  ansible.builtin.file:
+    path: "{{ docker.mount_point }}/nginx/certs"
+    state: directory
+    mode: "0755"
+
+- name: Generate offline self-signed wildcard certificate for {{ docker.domain }}
+  ansible.builtin.command:
+    cmd: >
+      openssl req -x509 -nodes -days {{ docker.ssl.days }} -newkey rsa:{{ docker.ssl.key_size }}
+      -keyout {{ docker.mount_point }}/nginx/certs/{{ docker.domain }}.key
+      -out {{ docker.mount_point }}/nginx/certs/{{ docker.domain }}.crt
+      -subj "/CN=*.{{ docker.domain }}/O=Homelab/C=PL"
+      -addext "subjectAltName=DNS:*.{{ docker.domain }},DNS:{{ docker.domain }}"
+    creates: "{{ docker.mount_point }}/nginx/certs/{{ docker.domain }}.crt"
+
+- name: Fetch self-signed certificate to local out directory
+  ansible.builtin.fetch:
+    src: "{{ docker.mount_point }}/nginx/certs/{{ docker.domain }}.crt"
+    dest: "{{ docker.cert_dest }}"
+    flat: true
+
+- name: Run Docker installation role
+  ansible.builtin.include_role:
+    name: geerlingguy.docker
+  vars:
+    docker_daemon_config: "{{ docker.daemon_options }}"
+    docker_install_compose: true
+    docker_compose_package: docker-compose-plugin
+    docker_users: ["{{ docker.user }}"]
+
+- name: Configure containerd root directory
+  ansible.builtin.copy:
+    content: |
+      version = 2
+      root = "{{ docker.containerd_root }}"
+    dest: /etc/containerd/config.toml
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart containerd
+
+- name: Ensure proxy-net exists
+  community.docker.docker_network:
+    name: "{{ docker.network.name }}"
+    driver: "{{ docker.network.driver }}"
+    state: present
+
+- name: Ensure nginx-proxy directory exists
+  ansible.builtin.file:
+    path: "{{ docker.nginx.compose_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Deploy nginx-proxy compose file
+  ansible.builtin.template:
+    src: nginx-compose.yml.j2
+    dest: "{{ docker.nginx.compose_dir }}/docker-compose.yml"
+    mode: "0644"
+
+- name: Remove conflicting nginx container if it exists
+  community.docker.docker_container:
+    name: "{{ docker.nginx.container_name }}"
+    state: absent
+
+- name: Start nginx-proxy stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ docker.nginx.compose_dir }}"
+    state: present
+
+- name: Configure docker cleanup
+  ansible.builtin.include_tasks: docker_cleanup_cron.yml

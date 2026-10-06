@@ -6,59 +6,41 @@ The Pi is standalone: it is not created by Terraform or configured by Ansible.
 
 ---
 
-## 📂 Directory Structure
+## Layout
 
-```text
-scripts/
-├── bitwarden/
-│   ├── bitwarden_get.py      # shared Bitwarden helper (also used by the mise tasks)
-│   └── __init__.py
-└── raspberry/
-    ├── bake_image.py         # Main prebaker script
-    ├── config.toml           # Single source of truth for host and network settings
-    ├── __init__.py
-    └── templates/            # Cloud-init templates
-        ├── meta-data.template
-        ├── network-config.template
-        └── user-data.template
-```
+The baker lives under `scripts/raspberry/`: the entry point, its settings file, and the cloud-init
+templates it renders. It reuses the shared Bitwarden helper under `scripts/bitwarden/`.
 
-`bake_image.py` imports `bitwarden.bitwarden_get`, so the repo's `scripts/` directory must be on
-`PYTHONPATH`. [`.mise.toml`](../../.mise.toml) sets `PYTHONPATH = "scripts"`, which is why
-`mise run bake-image` works and a bare `python3 scripts/raspberry/bake_image.py` may not. Outside
-mise, either run it through `mise exec -- python3 scripts/raspberry/bake_image.py` or prefix
-`PYTHONPATH=scripts`.
+The baker imports that helper as a module, so the repo's `scripts/` directory must be on
+`PYTHONPATH` — run it from the repo root with `PYTHONPATH=scripts` set (see Usage).
 
 ---
 
-## ⚙️ Configuration (`config.toml`)
+## ⚙️ Configuration
 
-All variables (hostname, timezone, static IP, gateway, and DNS servers) are isolated in `config.toml` so they never have to be hardcoded in the script:
+All variables (hostname, timezone, static IP, gateway, and DNS servers) are isolated in the
+baker's settings file so they never have to be hardcoded in the script:
 
-```toml
-[pi]
-image_path = "out/raspios-lite-arm64.img"
-username = "skoltun"
-hostname = "raspberry-pi"
-timezone = "Europe/Warsaw"
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `image_path` | `out/raspios-lite-arm64.img` | where the image lives, relative to the repo root |
+| `username` | `skoltun` | default user created by cloud-init |
+| `hostname` | `raspberry-pi` | device hostname |
+| `timezone` | `Europe/Warsaw` | system timezone |
+| `static_ip` | `192.168.1.105/24` | static address for the Pi |
+| `gateway` | `192.168.1.1` | network gateway |
+| `dns_servers` | `1.1.1.1`, `8.8.8.8` | resolvers written by cloud-init |
 
-[network]
-static_ip = "192.168.1.105/24"
-gateway = "192.168.1.1"
-dns_servers = ["1.1.1.1", "8.8.8.8"]
-```
+`out/` is gitignored — the baked image never lands in git. The default `static_ip` (`.105`) sits
+inside the range you reserve for the lab in [Local Network Setup](../../docs/network-setup.md).
 
-`image_path` is relative to the repo root, and `out/` is gitignored — the baked image never lands in
-git. The default `static_ip` (`.105`) sits inside the range you reserve for the lab in
-[Local Network Setup](../../docs/network-setup.md).
-
-> **Pro Tip:** You can dynamically override any setting on the fly using environment variables without modifying the file (e.g., `PI_STATIC_IP="192.168.1.120/24" mise run bake-image`). The full set is `PI_USER`, `PI_HOSTNAME`, `PI_TIMEZONE`, `PI_STATIC_IP`, `PI_GATEWAY`, `PI_DNS`.
+> **Pro Tip:** You can dynamically override any setting on the fly using environment variables without modifying the file (e.g. `PI_STATIC_IP="192.168.1.120/24"` in front of the run command). The full set is `PI_USER`, `PI_HOSTNAME`, `PI_TIMEZONE`, `PI_STATIC_IP`, `PI_GATEWAY`, `PI_DNS`.
 
 ---
 
 ## 🚀 Prerequisites
 
-1. **Python 3.12+** (managed smoothly via your project's `.mise.toml`).
+1. **Python 3.12+**.
 2. **Bitwarden CLI (`bw`)** installed and authenticated (the script automatically checks for vault status and prompts for unlock if locked). It reads the SSH **public** key from the `homelab-ssh-key` item.
 3. **Sudo Privileges** on your Linux host (required for `losetup`, partition mounting, and file injection).
 4. **Core Utilities:** `curl`, `xz`, `losetup`, `mount`.
@@ -67,21 +49,15 @@ git. The default `static_ip` (`.105`) sits inside the range you reserve for the 
 
 ## 🛠 Usage
 
-Run the build task via `mise` — it sets up `PYTHONPATH` for you:
+Run the baker from the repo root:
 
 ```bash
-mise run bake-image
+PYTHONPATH=scripts python3 scripts/raspberry/bake_image.py
 ```
 
-Or execute the Python script directly from the repo root:
-
-```bash
-mise exec -- python3 scripts/raspberry/bake_image.py
-```
-
-The script is idempotent about the download (an existing image is reused) but not about patching: it
-detects the cloud-init files it already injected, and `cmdline.txt` is only extended when
-`cgroup_memory=1` is missing.
+Re-running is safe: an existing image is reused instead of re-downloaded, the cloud-init files are
+rewritten from the current settings, and `cmdline.txt` is only extended when `cgroup_memory=1` is
+missing.
 
 ---
 

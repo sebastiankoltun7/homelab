@@ -29,9 +29,8 @@ mise run all
 `mise run all` is the whole deployment, from empty disks to deployed apps. It is safe to re-run —
 every step is idempotent — but for day-to-day work prefer the individual tasks below.
 
-Before step 3 you need two config files. `mise run setup` (or `mise run vault-create` +
-`mise run terraform-tfvars`) creates them from templates, imports your SSH key and the HCP
-Terraform token from Bitwarden, and installs the local Docker client:
+Before step 3 you need two config files. `mise run setup` creates them from templates, imports your
+SSH key and the HCP Terraform token from Bitwarden, and installs the local Docker client:
 
 ```bash
 mise run setup
@@ -48,8 +47,8 @@ mise run monitoring-password   # Grafana   (monitoring stack)
 
 ## Tasks
 
-Every task lives in [`.mise.toml`](.mise.toml) and runs from the repo root. `mise run <task>`
-lists them with their descriptions; `mise <task>` is shorthand for the same thing.
+Every task is declared in `.mise.toml` and runs from the repo root. `mise run <task>` lists them
+with their descriptions; `mise <task>` is shorthand for the same thing.
 
 ```bash
 mise run all                  # full deployment: disks, Terraform, Ansible, local tools, k3s apps
@@ -82,9 +81,9 @@ mise run tf-destroy           # destroy all infrastructure
 
 ```bash
 mise run ansible-all          # all playbooks (adguard + docker + plex + k3s)
-mise run ansible-adguard      # deploy AdGuard Home with a Let's Encrypt wildcard cert
+mise run ansible-adguard      # deploy AdGuard Home (DNS, rewrites, admin dashboard)
 mise run ansible-docker       # deploy Docker host
-mise run ansible-plex         # deploy Plex Media Server (external disks, bind mounts, GPU passthrough)
+mise run ansible-plex         # deploy Plex Media Server (external disks, bind mounts)
 mise run ansible-k3s          # deploy K3s single-node (192.168.1.104)
 mise run ansible-dry-run      # check mode, all playbooks
 ```
@@ -110,9 +109,9 @@ mise run apps-list            # list the releases declared in apps/k3s/helmfile.
 mise run apps-destroy         # uninstall every release in apps/k3s/helmfile.yaml
 ```
 
-`mise run apps` also creates the `cert-manager` namespace with the Cloudflare API token secret and
-applies `apps/k3s/cluster-issuer.yaml`, which is what issues the Let's Encrypt certificates for the
-ingress hostnames. See [Apps](apps/README.md#tls-for-the-ingresses).
+`mise run apps` also stores the Cloudflare API token in the `cert-manager` namespace, then applies
+the ClusterIssuer and the cluster-wide wildcard certificate that every K3s ingress serves with.
+See [Apps](apps/README.md#tls-for-the-ingresses).
 
 ### Raspberry Pi
 
@@ -137,25 +136,25 @@ mise run monitoring-password  # generated Grafana admin password
 | Headlamp | `https://dashboard.k3s.skoltun.dev` | paste the `headlamp-token` output |
 | Grafana | `https://grafana.k3s.skoltun.dev` | user `admin`, password from `monitoring-password` |
 | Prometheus | `https://grafana-prometheus.k3s.skoltun.dev` | none |
-| AdGuard Home | `https://adguard.skoltun.dev` | `admin_username` + password from `vault.yml` |
+| AdGuard Home | `http://192.168.1.101` | `admin_username` + password from `vault.yml` |
 | Plex | `http://192.168.1.103:32400/web` | claim once, then your Plex account |
 
-Headlamp, Grafana and AdGuard Home serve publicly trusted Let's Encrypt certificates. Prometheus has
-no `tls` block, so it still falls back to Traefik's self-signed default and the browser asks you to
-accept the warning once.
+Headlamp and Grafana are served with the cluster's Let's Encrypt wildcard certificate, so those URLs
+are warning-free. AdGuard's dashboard is plain HTTP. Prometheus has no TLS configured, so it falls
+back to Traefik's self-signed default and the browser asks you to accept the warning once.
 
 `mise run all` ends with `mise run apps`, which prints the first three URLs together with the tasks
 that produce the credentials.
 
 > `mise run all` runs, in order: `ansible-install` → `ssh-cleanup` → `ssh-accept-keys` →
 > `terraform-auth` → `tf-init` → `tf-apply` → `wait-for-vms` → `ansible-all` →
-> `docker-context` → `kubectl-config` → `helm-diff` → `apps`. Manual
-> `mise run ansible-*` runs also accept host keys first (`ssh-accept-keys` covers .100, .102, .104);
-> `ssh-cleanup` only happens inside `all`, so run it by hand after a VM rebuild.
+> `docker-context` → `kubectl-config` → `helm-diff` → `apps`. The individual `mise run ansible-*`
+> deployment tasks accept host keys first (`ssh-accept-keys` covers .100, .102, .104); `ssh-cleanup`
+> only happens inside `all`, so run it by hand after a VM rebuild.
 
 `kubectl`, `helm`, `helmfile`, `terraform` and `python` are not installed globally — they are pinned
-in [`.mise.toml`](.mise.toml), and mise tasks always run with those versions in `PATH`, even in a
-shell where `mise activate` never ran. For one-off commands outside a task use `mise exec -- ...`.
+in `.mise.toml`, and mise tasks always run with those versions in `PATH`, even in a shell where
+`mise activate` never ran. For one-off commands outside a task use `mise exec -- ...`.
 See [Prerequisites](#prerequisites).
 
 ## Infrastructure
@@ -166,10 +165,13 @@ See [Prerequisites](#prerequisites).
 | adguard | LXC (Debian 13) | 192.168.1.101 | DNS ad blocking (AdGuard Home) |
 | docker | VM (Ubuntu 24.04) | 192.168.1.102 | Container runtime (Docker + proxy-net) |
 | plex | LXC (Debian 13) | 192.168.1.103 | Plex Media Server (media + config on USB SSD) |
-| k3s | VM (Ubuntu 24.04) | 192.168.1.104 | K3s single-node (Traefik + Flannel, `terraform/modules/k3s_vm`) |
+| k3s | VM (Ubuntu 24.04) | 192.168.1.104 | K3s single-node (Traefik + Flannel) |
 | gateway | Router | 192.168.1.1 | Network gateway |
 
-Subnet: `192.168.1.0/24` · Tags: `management-plane` + `role-adguard`/`role-docker`/`role-plex`/`role-k3s`. See [Local Network Setup](docs/network-setup.md) for DHCP/DNS details. K3s kubeconfig is fetched to `ansible/playbooks/files/k3s.yaml` and wired locally via `mise run kubectl-config`.
+Subnet: `192.168.1.0/24` · Every guest carries a `role-*` tag plus a plane tag — `management-plane`
+for AdGuard and Docker, `media-plane` for Plex, `k3s-node` for K3s. See
+[Local Network Setup](docs/network-setup.md) for DHCP/DNS details. The K3s kubeconfig is fetched by
+the K3s playbook and wired locally via `mise run kubectl-config`.
 
 ## Apps
 
@@ -185,24 +187,24 @@ See [Apps](apps/README.md) for how to add, deploy, scope, and retire either kind
 ## Documentation
 
 - [Initial Setup](docs/setup.md) - Prerequisites, Proxmox config, first deployment, troubleshooting
-- [Local Network Setup](docs/network-setup.md) - DNS configuration, client setup, HTTPS certificates, troubleshooting
-- [Ansible](ansible/README.md) - Playbooks, vault, TLS cert, Docker network
+- [Local Network Setup](docs/network-setup.md) - Network map, DHCP reservations, client DNS
+- [Ansible](ansible/README.md) - Playbooks, inventory, variables and vault
 - [Apps](apps/README.md) - Adding and deploying apps with Docker Compose or helmfile
 - [Raspberry Pi image baker](scripts/raspberry/README.md) - Prebaking Raspberry Pi OS with cloud-init
 
 ## Prerequisites
 
 - [mise](https://mise.jdx.dev/getting-started.html) — the only tool you install yourself. It manages
-  everything else from [`.mise.toml`](.mise.toml); `mise install` fetches the pinned versions.
+  everything else from `.mise.toml`; `mise install` fetches the pinned versions.
 - Bitwarden CLI + an unlocked vault — the tasks read three items from it: `homelab-ssh-key`
   (written to `~/.ssh/id_ed25519`), `hcp-terraform-token` (its notes become the HCP API token) and
-  `Cloudflare token (HomeLab)` (its password becomes the Let's Encrypt DNS-01 token for AdGuard and
-  cert-manager). Set `BW_SESSION` to skip the interactive unlock, and note that `terraform-auth` is
-  interactive.
+  `Cloudflare token (HomeLab)` (its password becomes the Let's Encrypt DNS-01 token cert-manager
+  uses for the cluster's wildcard certificate). Set `BW_SESSION` to skip the interactive unlock, and
+  note that `terraform-auth` is interactive.
 - A domain you control — `skoltun.dev` in this repo, delegated to Cloudflare, with an API token that
   can edit DNS for the zone. Every HTTPS endpoint gets a publicly trusted certificate, so there is
   nothing to trust manually. See [Initial Setup](docs/setup.md#5-domain-and-certificates).
-- `jq` and OpenSSH — used by the `ssh-key` and `terraform-auth` tasks.
+- `jq` and OpenSSH — used by the `ssh-key` task and for SSH access to the hosts.
 - Proxmox VE host reachable at `192.168.1.100:8006`
 - Docker >= 24.0 — installed for you on Linux/WSL2 by `mise run install-docker-local`; the Docker VM
   is the runtime, so this is only the local client plus the remote `homelab` context.
@@ -210,7 +212,7 @@ See [Apps](apps/README.md) for how to add, deploy, scope, and retire either kind
   needed. Activate it with `source ansible/.venv/bin/activate` to run `ansible-playbook` directly.
 - `sudo` + `losetup` — only if you run `mise run bake-image` for the Raspberry Pi.
 
-Pinned in [`.mise.toml`](.mise.toml) and installed by `mise install`:
+Pinned in `.mise.toml` and installed by `mise install`:
 
 | Tool | Version |
 |------|---------|
@@ -227,8 +229,3 @@ access. Neither needs sudo.
 
 To use a different tool version, edit `.mise.toml` (or `mise use helm@3.22.0`) and re-run
 `mise install`.
-
-Versions tested: Terraform 1.16.x, kubectl `v1.37.1` against server `v1.36.4+k3s1`, Helm `v4.3.0`,
-helmfile `1.8.0`, helm-diff `3.15.15`.
-
-Provider/collections pinned: `bpg/proxmox 0.108.0` (`terraform/providers.tf:5`, `terraform/.terraform.lock.hcl:5`), `ansible.posix 2.2.0`, `community.docker 5.2.1`, `community.general 13.0.1`, `community.proxmox 2.0.0` (`ansible/requirements.yml:5`).

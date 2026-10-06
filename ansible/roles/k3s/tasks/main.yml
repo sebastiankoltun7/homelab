@@ -1,0 +1,79 @@
+---
+- name: Ensure required kernel modules are loaded
+  ansible.builtin.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - br_netfilter
+    - overlay
+
+- name: Configure sysctl for Kubernetes networking
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    state: present
+    reload: true
+  loop:
+    - key: 'net.bridge.bridge-nf-call-iptables'
+      value: '1'
+    - key: 'net.bridge.bridge-nf-call-ip6tables'
+      value: '1'
+    - key: 'net.ipv4.ip_forward'
+      value: '1'
+
+- name: Create filesystem on secondary disk if not present
+  ansible.builtin.filesystem:
+    fstype: ext4
+    dev: "{{ k3s.disk_id }}"
+
+- name: Ensure mount directory exists
+  ansible.builtin.file:
+    path: "{{ k3s.mount_point }}"
+    state: directory
+    mode: '0755'
+
+- name: Mount secondary disk to K3s data directory
+  ansible.posix.mount:
+    path: "{{ k3s.mount_point }}"
+    src: "{{ k3s.disk_id }}"
+    fstype: ext4
+    opts: defaults
+    state: mounted
+  notify: Restart k3s
+
+- name: Check if K3s is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_binary
+
+- name: Install K3s server
+  when: not k3s_binary.stat.exists
+  ansible.builtin.shell: |
+    curl -sfL {{ k3s.install_script_url }} | INSTALL_K3S_EXEC="{{ k3s.exec_options }}" sh -
+  args:
+    executable: /bin/bash
+  notify: Restart k3s
+
+- name: Ensure K3s service is started and enabled
+  ansible.builtin.systemd:
+    name: k3s
+    state: started
+    enabled: true
+
+- name: Ensure kubeconfig is readable by the user
+  ansible.builtin.file:
+    path: /etc/rancher/k3s/k3s.yaml
+    mode: '0644'
+  become: true
+
+- name: Wait for K3s kubeconfig to appear
+  ansible.builtin.wait_for:
+    path: /etc/rancher/k3s/k3s.yaml
+    timeout: 30
+
+- name: Fetch kubeconfig to local playbook directory
+  ansible.builtin.fetch:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "{{ k3s.kubeconfig_dest }}"
+    flat: true

@@ -1,0 +1,25 @@
+http:
+  address: {{ adguard.http_address }}
+
+tls:
+  enabled: false
+
+dns:
+  bind_hosts:
+    - 0.0.0.0
+{% if adguard.dns_ipv6 | default(false) %}
+    - '::'
+{% endif %}
+  port: 53
+  rewrites:
+{% for domain, answer in adguard.dns_rewrites.items() %}
+    - domain: "{{ domain }}"
+      answer: "{{ answer }}"
+{% endfor %}
+
+users:
+  - name: "{{ adguard.admin_username }}"
+    password: {{ adguard_admin_password_hash }}
+
+dashboard:
+  theme: dark

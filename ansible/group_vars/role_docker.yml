@@ -1,25 +1,36 @@
-# Connection
-ansible_user: "{{ admin_username }}"
+# Docker Configuration
+docker:
+  domain: "docker.homelab"
+  cert_dest: "../out/{{ docker.domain }}.crt"
+  user: "{{ admin_username }}"
+  disk_id: "/dev/disk/by-id/virtio-DOCKER-DATA"
+  mount_point: "/mnt/docker-data"
+  engine_root: "{{ docker.mount_point }}/docker-engine"
+  containerd_root: "{{ docker.mount_point }}/containerd-data"
 
-# Disk configuration
-docker_disk_id: "/dev/disk/by-id/virtio-DOCKER-DATA"
-docker_mount_point: "/mnt/docker-data"
+  daemon_options:
+    data-root: "{{ docker.engine_root }}"
+    log-driver: "json-file"
+    log-opts:
+      max-size: "10m"
+      max-file: "3"
 
-# Application paths
-docker_engine_root: "{{ docker_mount_point }}/docker-engine"
-containerd_root: "{{ docker_mount_point }}/containerd-data"
+  ssl:
+    days: 365
+    key_size: 2048
 
-# Docker Daemon Options
-docker_daemon_options:
-  data-root: "{{ docker_engine_root }}"
-  log-driver: "json-file"
-  log-opts:
-    max-size: "10m"
-    max-file: "3"
+  network:
+    name: "proxy-net"
+    driver: "bridge"
 
-# Docker Cleanup Settings
-# Sunday at 01:00
-docker_cleanup_cron_minute: "0"
-docker_cleanup_cron_hour: "1"
-docker_cleanup_cron_weekday: "0"
-docker_cleanup_command: "/usr/bin/docker system prune -a -f --volumes"
+  nginx:
+    image: "nginxproxy/nginx-proxy:latest"
+    container_name: "nginx"
+    timezone: "Europe/Warsaw"
+    compose_dir: "/opt/nginx-proxy"
+
+  cleanup:
+    minute: "0"
+    hour: "1"
+    weekday: "0"
+    command: "/usr/bin/docker system prune -a -f --volumes"

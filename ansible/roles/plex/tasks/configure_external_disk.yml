@@ -1,7 +1,4 @@
 ---
-# Per-disk tasks: resolve the device, mount it persistently and prepare
-# subdirectories. `item` is one entry of `external_disks`.
-
 - name: Record the disk being processed
   ansible.builtin.set_fact:
     current_disk: "{{ item }}"
@@ -26,7 +23,7 @@
   register: disk_blkid
   changed_when: false
 
-- name: Extract unnamed values ({{ current_disk.name }})
+- name: Extract UUID ({{ current_disk.name }})
   ansible.builtin.set_fact:
     disk_uuid: "{{ disk_blkid.stdout_lines | select('search', '^UUID=') | first | split('=', 1) | last | regex_replace('\"', '') }}"
 

@@ -83,7 +83,7 @@ mise run tf-destroy           # destroy all infrastructure
 mise run ansible-all          # all playbooks (adguard + docker + plex + k3s)
 mise run ansible-adguard      # deploy AdGuard Home (DNS, rewrites, admin dashboard)
 mise run ansible-docker       # deploy Docker host
-mise run ansible-plex         # deploy Plex Media Server (external disks, bind mounts, GPU passthrough)
+mise run ansible-plex         # deploy Plex Media Server (external disks, bind mounts)
 mise run ansible-k3s          # deploy K3s single-node (192.168.1.104)
 mise run ansible-dry-run      # check mode, all playbooks
 ```

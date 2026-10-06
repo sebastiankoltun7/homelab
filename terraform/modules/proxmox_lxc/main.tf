@@ -82,19 +82,12 @@ resource "proxmox_virtual_environment_container" "lxc_container" {
     size         = var.disk_size
   }
 
-  # Bind mounts and device passthrough can only be applied by user root@pam
+  # Bind mounts can only be applied by user root@pam
   # (not by an API token), so they are configured out-of-band by the Ansible
   # "setup_pve_host" playbook via `pct`. Keep Terraform declarative in code but
   # ignore the runtime drift it can never manage itself.
   lifecycle {
     ignore_changes = [mount_point]
-  }
-
-  dynamic "device_passthrough" {
-    for_each = var.device_passthrough
-    content {
-      path = device_passthrough.value.path
-    }
   }
 
   depends_on = [proxmox_virtual_environment_file.debian_template]

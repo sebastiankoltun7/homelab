@@ -15,15 +15,6 @@
       - id: "mp1"
         host_path: "/mnt/pve/ssd-backup/PlexConfig"
         container_path: "/plex-config"
-    plex_device_lines:
-      - "lxc.cgroup2.devices.allow: c 226:* rwm"
-      - "lxc.mount.entry: /dev/dri/dri dev/dri none bind,optional,create=dir"
-      - "lxc.mount.entry: /dev/dri/renderD128 dev/dri/renderD128 none bind,optional,create=file"
-    plex_dri_devices:
-      - "/dev/dri/dri"
-      - "/dev/dri/card0"
-      - "/dev/dri/card1"
-      - "/dev/dri/renderD128"
 
   tasks:
     - name: Ensure external disks configuration is provided
@@ -37,7 +28,7 @@
       loop_control:
         label: "{{ item.name }}"
 
-    # --- Proxmox LXC Configuration (Binds + GPU) ---
+    # --- Proxmox LXC Configuration (Bind Mounts) ---
     - name: Ensure the plex container config exists
       ansible.builtin.stat:
         path: "{{ plex_config_file }}"
@@ -62,30 +53,6 @@
         label: "{{ item.id }}: {{ item.host_path }} -> {{ item.container_path }}"
       when: plex_conf.stdout.find(item.id ~ ':') == -1
       notify: Restart plex container
-
-    - name: Add GPU passthrough entries to the container config
-      ansible.builtin.lineinfile:
-        path: "{{ plex_config_file }}"
-        line: "{{ item }}"
-        create: true
-      loop: "{{ plex_device_lines }}"
-      notify: Restart plex container
-
-    - name: Remove stale GPU entries
-      ansible.builtin.lineinfile:
-        path: "{{ plex_config_file }}"
-        line: "lxc.mount.entry: /dev/dri/card0 dev/dri/card0 none bind,optional,create=file"
-        state: absent
-      notify: Restart plex container
-
-    - name: Make GPU devices accessible
-      ansible.builtin.file:
-        path: "{{ item }}"
-        mode: "0666"
-      loop: "{{ plex_dri_devices }}"
-      loop_control:
-        label: "{{ item }}"
-      when: item is exists
 
   handlers:
     - name: Stop plex container

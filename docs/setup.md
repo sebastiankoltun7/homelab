@@ -120,9 +120,9 @@ Types and defaults are declared alongside the Terraform code. The state file is 
 > pveum user token add tf-infra@pve tf --privsep 0
 > ```
 >
-> Bind mounts and device passthrough on LXC can only be applied by `root@pam` itself, so those are
+> Bind mounts on LXC can only be applied by `root@pam` itself, so those are
 > handled over SSH instead of through the Proxmox API — the Plex playbook prepares the Proxmox host
-> (external disks, bind mounts, GPU entries) before it configures the container.
+> (external disks, bind mounts) before it configures the container.
 
 ### 3. Configure the vault
 
@@ -243,7 +243,7 @@ asks you to accept it once.
 docker info                              # Docker VM is up (remote context "homelab")
 nslookup google.com 192.168.1.101        # AdGuard resolving
 curl http://192.168.1.101                # AdGuard dashboard over HTTP
-ssh root@192.168.1.103 "findmnt /PlexMedia && ls /dev/dri"   # Plex mounts
+ssh root@192.168.1.103 "findmnt /PlexMedia"  # Plex mounts
 kubectl get nodes                        # K3s Ready
 kubectl get pods -n cert-manager          # cert-manager running
 kubectl get certificate                   # the cluster wildcard certificate issued and Ready

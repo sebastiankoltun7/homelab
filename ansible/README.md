@@ -31,7 +31,7 @@ plus `ansible-galaxy install -r requirements.yml` yourself) before running anyth
 | `site.yml` | all of the below | imports every playbook in provisioning order |
 | `install_adguard.yml` | AdGuard LXC `.101` | installs AdGuard Home, renders its config, starts the service |
 | `install_docker.yml` | Docker VM `.102` | data disk, Docker engine + compose plugin, `proxy-net` bridge, prune cron |
-| `install_plex.yml` | Proxmox host + Plex LXC `.103` | host-side disks/binds/GPU, then installs Plex inside the container |
+| `install_plex.yml` | Proxmox host + Plex LXC `.103` | host-side disks/binds, then installs Plex inside the container |
 | `install_k3s.yml` | K3s VM `.104` | kernel/network prep, data disk, K3s server, fetches the kubeconfig |
 
 ## Inventory
@@ -41,8 +41,8 @@ plus `ansible-galaxy install -r requirements.yml` yourself) before running anyth
   plugin, addressing them by VMID.
 - **Docker** (`role_docker`) and **K3s** (`role_k3s`) are VMs reached directly over SSH as the admin
   user from the vault.
-- A separate **`pve`** group targets the Proxmox host itself over SSH, because LXC bind mounts and
-  device passthrough can only be applied by `root@pam`.
+- A separate **`pve`** group targets the Proxmox host itself over SSH, because LXC bind mounts can
+  only be applied by `root@pam`.
 
 ## Roles
 
@@ -112,8 +112,6 @@ The Plex playbook has two plays. The first targets the Proxmox host and:
 1. Mounts every configured external disk by UUID under `/mnt/pve/<name>`, asserting the directories
    that must already exist and creating the ones marked for creation.
 2. Binds the media and config directories into the Plex container.
-3. Adds the GPU passthrough entries to the container config and makes the devices accessible,
-   dropping a stale entry if one is left over.
 
 The second play installs `plexmediaserver` from the Plex apt repo and points its application-support
 directory at the config bind mount through a systemd override.

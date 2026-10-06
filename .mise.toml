@@ -148,11 +148,8 @@ fi
 description = "Run all playbooks (adguard + docker + plex + k3s)"
 depends = ["ssh-accept-keys"]
 run = """
-echo "Fetching Cloudflare token from Bitwarden..."
-CF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_CF_ITEM}}" ".login.password")
-
 cd {{env.ANSIBLE_DIR}}
-.venv/bin/ansible-playbook playbooks/install_adguard.yml -e "cloudflare_api_token=$CF_TOKEN"
+.venv/bin/ansible-playbook playbooks/install_adguard.yml
 .venv/bin/ansible-playbook playbooks/install_docker.yml
 .venv/bin/ansible-playbook playbooks/install_plex.yml
 .venv/bin/ansible-playbook playbooks/install_k3s.yml
@@ -181,9 +178,8 @@ run = "cd {{env.ANSIBLE_DIR}} && .venv/bin/ansible-playbook playbooks/install_k3
 [tasks."ansible-dry-run"]
 description = "Dry-run all playbooks"
 run = """
-CF_TOKEN=$(python3 {{env.BW_SCRIPT}} "{{env.BW_CF_ITEM}}" ".login.password" 2>/dev/null || echo "dummy-token")
 cd {{env.ANSIBLE_DIR}}
-.venv/bin/ansible-playbook playbooks/install_adguard.yml --check -e "cloudflare_api_token=$CF_TOKEN"
+.venv/bin/ansible-playbook playbooks/install_adguard.yml --check
 .venv/bin/ansible-playbook playbooks/install_docker.yml --check
 .venv/bin/ansible-playbook playbooks/install_plex.yml --check
 .venv/bin/ansible-playbook playbooks/install_k3s.yml --check

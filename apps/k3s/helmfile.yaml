@@ -8,6 +8,8 @@ repositories:
     url: https://charts.jetstack.io
   - name: emberstack
     url: https://emberstack.github.io/helm-charts
+  - name: redpanda
+    url: https://charts.redpanda.com
 
 helmDefaults:
   wait: true
@@ -46,3 +48,17 @@ releases:
     disableValidation: true
     values:
       - monitoring/values.yaml
+
+  - name: redpanda
+    installed: true
+    namespace: kafka
+    createNamespace: true
+    chart: redpanda/redpanda
+    disableValidation: true
+    values:
+      - redpanda/values.yaml
+
+  - name: redpanda-ingress
+    installed: true
+    namespace: kafka
+    chart: ./kafka

@@ -1,0 +1,29 @@
+# Single replica for home lab setup
+statefulset:
+  replicas: 1
+
+# Disable TLS for effortless local client connections
+tls:
+  enabled: false
+
+# Enable the built-in Redpanda Console (monitoring UI)
+console:
+  enabled: true
+
+# Expose metrics for Prometheus/Grafana stack already running in your cluster
+monitoring:
+  enabled: true
+
+# Standard Kubernetes resource requests and limits
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1.5Gi"
+  limits:
+    cpu: "1"
+    memory: "2Gi"
+
+storage:
+  persistentVolume:
+    enabled: true
+    size: 10Gi

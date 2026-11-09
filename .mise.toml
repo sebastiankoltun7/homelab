@@ -335,6 +335,7 @@ echo ""
 echo "Headlamp:   https://dashboard.k3s.skoltun.dev (token: mise run headlamp-token)"
 echo "Grafana:    https://grafana.k3s.skoltun.dev    (user: admin, password: mise run monitoring-password)"
 echo "Prometheus: https://grafana-prometheus.k3s.skoltun.dev"
+echo "Redpanda: https://redpanda.k3s.skoltun.dev"
 """
 
 [tasks."apps-list"]

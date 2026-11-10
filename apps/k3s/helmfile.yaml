@@ -10,8 +10,6 @@ repositories:
     url: https://emberstack.github.io/helm-charts
   - name: redpanda
     url: https://charts.redpanda.com
-  - name: bedag
-    url: https://bedag.github.io/helm-charts/
 
 helmDefaults:
   wait: true

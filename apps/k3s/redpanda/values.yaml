@@ -6,7 +6,26 @@ redpanda:
     enabled: false
 
   external:
-    enabled: false
+    enabled: true
+    domain: k3s.skoltun.dev
+
+  listeners:
+    admin:
+      external:
+        default:
+          enabled: false
+    kafka:
+      external:
+        default:
+          enabled: true
+    schemaRegistry:
+      external:
+        default:
+          enabled: false
+    http:
+      external:
+        default:
+          enabled: false
 
   console:
     enabled: true

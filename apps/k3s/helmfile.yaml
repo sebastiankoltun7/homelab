@@ -53,12 +53,6 @@ releases:
     installed: true
     namespace: kafka
     createNamespace: true
-    chart: redpanda/redpanda
-    disableValidation: true
+    chart: ./redpanda
     values:
       - redpanda/values.yaml
-
-  - name: redpanda-ingress
-    installed: true
-    namespace: kafka
-    chart: ./kafka

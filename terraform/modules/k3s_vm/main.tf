@@ -77,6 +77,12 @@ module "k3s_firewall" {
       port    = "443"
       proto   = "tcp"
       comment = "Allow HTTPS inbound for Traefik Ingress and TLS"
+    },
+    {
+      port    = "31092"
+      proto   = "tcp"
+      source  = "192.168.1.0/24"
+      comment = "Allow LAN Kafka clients to Redpanda NodePort"
     }
   ]
 

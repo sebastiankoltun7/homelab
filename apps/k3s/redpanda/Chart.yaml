@@ -1,0 +1,11 @@
+apiVersion: v2
+name: redpanda-homelab
+description: Umbrella Helm chart for a single Redpanda broker
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+dependencies:
+  - name: redpanda
+    version: "5.8.x" # Uses latest 5.x official Redpanda chart
+    repository: https://charts.redpanda.com

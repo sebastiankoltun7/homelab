@@ -10,6 +10,8 @@ repositories:
     url: https://emberstack.github.io/helm-charts
   - name: redpanda
     url: https://charts.redpanda.com
+  - name: bedag
+    url: https://bedag.github.io/helm-charts/
 
 helmDefaults:
   wait: true
@@ -53,12 +55,6 @@ releases:
     installed: true
     namespace: kafka
     createNamespace: true
-    chart: redpanda/redpanda
-    disableValidation: true
+    chart: ./redpanda
     values:
       - redpanda/values.yaml
-
-  - name: redpanda-ingress
-    installed: true
-    namespace: kafka
-    chart: ./kafka
